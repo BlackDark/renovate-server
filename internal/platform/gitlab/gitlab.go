@@ -16,6 +16,7 @@ import (
 	"github.com/BlackDark/renovate-server/internal/platform"
 )
 
+// GitLab implements platform.Platform for a GitLab instance.
 type GitLab struct {
 	name            string
 	client          *gogitlab.Client
@@ -29,6 +30,7 @@ type GitLab struct {
 	log             *slog.Logger
 }
 
+// New builds a GitLab adapter from its platform config section.
 func New(cfg config.Platform, log *slog.Logger) (*GitLab, error) {
 	client, err := gogitlab.NewClient(cfg.Token, gogitlab.WithBaseURL(cfg.BaseURL))
 	if err != nil {
@@ -52,13 +54,21 @@ func New(cfg config.Platform, log *slog.Logger) (*GitLab, error) {
 	}, nil
 }
 
-func (g *GitLab) Name() string              { return g.name }
-func (g *GitLab) WebhookPath() string       { return g.webhookPath }
+// Name returns the platform's configured name.
+func (g *GitLab) Name() string { return g.name }
+
+// WebhookPath returns the HTTP path this platform's webhooks arrive on.
+func (g *GitLab) WebhookPath() string { return g.webhookPath }
+
+// Schedule returns the platform's cron configuration.
 func (g *GitLab) Schedule() config.Schedule { return g.schedule }
 
 // Client exposes the authenticated API client for the gitlabci executor.
 func (g *GitLab) Client() *gogitlab.Client { return g.client }
 
+// ParseWebhook checks the X-Gitlab-Token and maps supported events (MR or
+// issue description edits with newly checked boxes, default-branch push)
+// to a run request; unsupported or irrelevant events return (nil, nil).
 func (g *GitLab) ParseWebhook(r *http.Request, body []byte) (*platform.Event, error) {
 	token := r.Header.Get("X-Gitlab-Token")
 	if subtle.ConstantTimeCompare([]byte(token), []byte(g.secret)) != 1 {
@@ -122,6 +132,8 @@ func (g *GitLab) event(fullName string, reason platform.Reason) *platform.Event 
 	}
 }
 
+// DiscoverRepos lists all projects of the configured groups including
+// subgroups, honoring the archived filter.
 func (g *GitLab) DiscoverRepos(ctx context.Context) ([]platform.Repo, error) {
 	var repos []platform.Repo
 	for _, group := range g.groups {

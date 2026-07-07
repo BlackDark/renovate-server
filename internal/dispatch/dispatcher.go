@@ -1,3 +1,5 @@
+// Package dispatch owns the run lifecycle: routing repos to executors and
+// serializing runs per repo with debounce, coalescing and timeouts.
 package dispatch
 
 import (
@@ -45,6 +47,7 @@ type Dispatcher struct {
 	cancel  context.CancelFunc
 }
 
+// NewDispatcher wires a Dispatcher; opts.Log and opts.Metrics may be nil.
 func NewDispatcher(st store.Store, router *Router, opts Options) *Dispatcher {
 	if opts.Log == nil {
 		opts.Log = slog.Default()

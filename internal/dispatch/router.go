@@ -27,6 +27,7 @@ type Router struct {
 	rules []compiledRule
 }
 
+// NewRouter compiles the ordered rules, resolving executor names.
 func NewRouter(rules []config.Rule, executors map[string]executor.Executor) (*Router, error) {
 	r := &Router{}
 	for i, rule := range rules {
@@ -43,6 +44,7 @@ func NewRouter(rules []config.Rule, executors map[string]executor.Executor) (*Ro
 	return r, nil
 }
 
+// Route returns the first matching rule's outcome for a repo full name.
 func (r *Router) Route(repoFullName string) Route {
 	for _, rule := range r.rules {
 		ok, err := doublestar.Match(rule.pattern, repoFullName)

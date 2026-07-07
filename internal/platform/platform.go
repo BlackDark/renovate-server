@@ -1,3 +1,5 @@
+// Package platform defines the platform-neutral types (repos, events) and
+// the interface every git hosting adapter implements.
 package platform
 
 import (
@@ -20,6 +22,7 @@ func (r Repo) Key() string { return r.Platform + ":" + r.FullName }
 // Reason describes why a run was requested.
 type Reason string
 
+// Reasons a run can be requested for.
 const (
 	ReasonMergeRequest Reason = "merge_request"
 	ReasonIssue        Reason = "issue"

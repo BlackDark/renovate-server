@@ -40,6 +40,7 @@ func NewAPIFromEnv() (API, error) {
 	return client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 }
 
+// Executor runs renovate containers via the Docker API.
 type Executor struct {
 	name        string
 	api         API
@@ -50,6 +51,7 @@ type Executor struct {
 	log         *slog.Logger
 }
 
+// New builds a docker Executor from its config section.
 func New(cfg config.Executor, api API, log *slog.Logger) *Executor {
 	return &Executor{
 		name:        cfg.Name,
@@ -62,8 +64,11 @@ func New(cfg config.Executor, api API, log *slog.Logger) *Executor {
 	}
 }
 
+// Name returns the executor's configured name.
 func (e *Executor) Name() string { return e.name }
 
+// Run creates, starts and awaits a renovate container for spec; the
+// container is force-removed afterwards even on cancellation.
 func (e *Executor) Run(ctx context.Context, spec executor.RunSpec) error {
 	if e.pull {
 		rc, err := e.api.ImagePull(ctx, e.image, image.PullOptions{})

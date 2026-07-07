@@ -1,3 +1,5 @@
+// Package executor defines how renovate runs are started and awaited;
+// implementations live in the subpackages gitlabci, kubernetes and docker.
 package executor
 
 import (

@@ -1,3 +1,5 @@
+// Package store tracks per-repo run state behind an interface so the
+// in-memory default can later be swapped for a shared backend (Redis).
 package store
 
 import "time"
@@ -5,6 +7,7 @@ import "time"
 // State of a tracked repo. Idle repos are not tracked.
 type State string
 
+// Repo states; a repo without an entry is idle.
 const (
 	StateQueued  State = "queued"
 	StateRunning State = "running"
@@ -14,11 +17,13 @@ const (
 type QueueResult int
 
 const (
-	// Queued: repo was idle, caller must schedule a run.
+	// Queued means the repo was idle and the caller must schedule a run.
 	Queued QueueResult = iota
-	// Coalesced: repo already queued, event merged into the pending run.
+	// Coalesced means the repo was already queued; the event merged into
+	// the pending run.
 	Coalesced
-	// Deferred: repo is running, a rerun was flagged for after completion.
+	// Deferred means the repo is running; a rerun was flagged for after
+	// completion.
 	Deferred
 )
 

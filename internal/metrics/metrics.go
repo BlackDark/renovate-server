@@ -7,6 +7,7 @@ import (
 	"github.com/BlackDark/renovate-server/internal/store"
 )
 
+// Metrics bundles all Prometheus collectors of the server.
 type Metrics struct {
 	webhookEvents *prometheus.CounterVec
 	runsStarted   *prometheus.CounterVec
@@ -43,14 +44,19 @@ func New(reg *prometheus.Registry, st store.Store) *Metrics {
 	return m
 }
 
+// WebhookEvent counts one webhook request by platform and outcome
+// (accepted|ignored|unauthorized|invalid).
 func (m *Metrics) WebhookEvent(platformName, outcome string) {
 	m.webhookEvents.WithLabelValues(platformName, outcome).Inc()
 }
 
+// RunStarted counts a started run; implements dispatch.Metrics.
 func (m *Metrics) RunStarted(executorName string) {
 	m.runsStarted.WithLabelValues(executorName).Inc()
 }
 
+// RunFinished records a finished run's result (success|failure|timeout)
+// and duration; implements dispatch.Metrics.
 func (m *Metrics) RunFinished(executorName, result string, seconds float64) {
 	m.runsFinished.WithLabelValues(executorName, result).Inc()
 	m.runDuration.WithLabelValues(executorName).Observe(seconds)

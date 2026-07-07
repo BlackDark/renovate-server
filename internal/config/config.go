@@ -1,7 +1,10 @@
+// Package config defines the YAML configuration schema, loading with
+// ${VAR} env expansion, defaults and fail-fast validation.
 package config
 
 import "time"
 
+// Platform and executor type identifiers used in the config file.
 const (
 	PlatformGitLab = "gitlab"
 	PlatformGitHub = "github"
@@ -11,6 +14,7 @@ const (
 	ExecutorDocker         = "docker"
 )
 
+// Config is the root of the configuration file.
 type Config struct {
 	Server    Server     `yaml:"server"`
 	Platforms []Platform `yaml:"platforms"`
@@ -18,6 +22,7 @@ type Config struct {
 	Rules     []Rule     `yaml:"rules"`
 }
 
+// Server holds process-wide settings: listener, logging and dispatch tuning.
 type Server struct {
 	Listen            string        `yaml:"listen"`
 	Log               Log           `yaml:"log"`
@@ -26,11 +31,14 @@ type Server struct {
 	RunTimeout        time.Duration `yaml:"runTimeout"`
 }
 
+// Log configures slog output.
 type Log struct {
 	Level  string `yaml:"level"`  // debug|info|warn|error
 	Format string `yaml:"format"` // json|text
 }
 
+// Platform describes one git hosting platform (GitLab instance or GitHub
+// org) with its webhook, discovery and schedule settings.
 type Platform struct {
 	Name      string    `yaml:"name"`
 	Type      string    `yaml:"type"` // gitlab|github
@@ -43,21 +51,26 @@ type Platform struct {
 	Schedule  Schedule  `yaml:"schedule"`
 }
 
+// Webhook is the receiving endpoint for a platform's webhooks.
 type Webhook struct {
 	Path   string `yaml:"path"`
 	Secret string `yaml:"secret"`
 }
 
+// Discovery controls which repos the cron schedule enumerates.
 type Discovery struct {
 	Groups          []string `yaml:"groups"`
 	ExcludeArchived bool     `yaml:"excludeArchived"`
 }
 
+// Schedule holds the cron expressions for periodic full runs.
 type Schedule struct {
 	Crontabs []string `yaml:"crontabs"`
 	Timezone string   `yaml:"timezone"`
 }
 
+// Executor describes one way to run renovate; only the fields for its
+// Type are used.
 type Executor struct {
 	Name string `yaml:"name"`
 	Type string `yaml:"type"` // gitlabPipeline|kubernetes|docker
@@ -84,6 +97,8 @@ type Executor struct {
 	Env map[string]string `yaml:"env"`
 }
 
+// Rule routes repos (matched by doublestar glob on the full name) to an
+// executor, or disables them. First match wins.
 type Rule struct {
 	Match    string `yaml:"match"`
 	Executor string `yaml:"executor"`

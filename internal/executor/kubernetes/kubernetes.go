@@ -36,6 +36,7 @@ const (
 	cacheMountPath     = "/tmp/renovate/cache"
 )
 
+// Executor runs renovate as Kubernetes Jobs.
 type Executor struct {
 	name         string
 	client       k8s.Interface
@@ -48,6 +49,7 @@ type Executor struct {
 	log          *slog.Logger
 }
 
+// New builds a kubernetes Executor from its config section.
 func New(cfg config.Executor, client k8s.Interface, log *slog.Logger) *Executor {
 	return &Executor{
 		name:         cfg.Name,
@@ -83,8 +85,10 @@ func NewClientFromEnv() (k8s.Interface, error) {
 	return k8s.NewForConfig(cfg)
 }
 
+// Name returns the executor's configured name.
 func (e *Executor) Name() string { return e.name }
 
+// Run creates a Job for spec and polls it until completion or ctx cancel.
 func (e *Executor) Run(ctx context.Context, spec executor.RunSpec) error {
 	job := e.buildJob(spec)
 	created, err := e.client.BatchV1().Jobs(e.namespace).Create(ctx, job, metav1.CreateOptions{})
@@ -156,7 +160,8 @@ func (e *Executor) buildJob(spec executor.RunSpec) *batchv1.Job {
 	hash := repoHash(spec.Repo.Key())
 	name := fmt.Sprintf("renovate-%s-%s", hash, strconv.FormatInt(time.Now().UnixNano(), 36))
 
-	env := []corev1.EnvVar{{Name: "RENOVATE_REPOSITORIES", Value: spec.Repo.FullName}}
+	env := make([]corev1.EnvVar, 0, 1+len(e.env))
+	env = append(env, corev1.EnvVar{Name: "RENOVATE_REPOSITORIES", Value: spec.Repo.FullName})
 	keys := make([]string, 0, len(e.env))
 	for k := range e.env {
 		keys = append(keys, k)

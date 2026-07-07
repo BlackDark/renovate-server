@@ -1,0 +1,33 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - copyloopvar
+    - gocritic
+    - gosec
+    - misspell
+    - nolintlint
+    - prealloc
+    - revive
+    - unconvert
+    - unparam
+    - whitespace
+  settings:
+    gosec:
+      excludes:
+        - G404 # math/rand is not used for crypto here
+        - G304 # config file path comes from the operator-supplied -config flag
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - unparam
+          - errcheck
+          - revive
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

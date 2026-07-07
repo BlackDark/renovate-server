@@ -18,6 +18,7 @@ import (
 
 const maxConsecutivePollErrors = 5
 
+// Executor triggers pipelines in a central GitLab project.
 type Executor struct {
 	name         string
 	client       *gogitlab.Client
@@ -36,6 +37,8 @@ type templateData struct {
 	Reason   string
 }
 
+// New builds a gitlabPipeline Executor; variable templates are parsed and
+// validated here so bad templates fail at startup.
 func New(cfg config.Executor, client *gogitlab.Client, log *slog.Logger) (*Executor, error) {
 	vars := make(map[string]*template.Template, len(cfg.Variables))
 	for k, v := range cfg.Variables {
@@ -57,8 +60,11 @@ func New(cfg config.Executor, client *gogitlab.Client, log *slog.Logger) (*Execu
 	}, nil
 }
 
+// Name returns the executor's configured name.
 func (e *Executor) Name() string { return e.name }
 
+// Run triggers the pipeline with rendered variables and polls it until a
+// terminal status or ctx cancellation.
 func (e *Executor) Run(ctx context.Context, spec executor.RunSpec) error {
 	data := templateData{
 		Repo:     spec.Repo.FullName,

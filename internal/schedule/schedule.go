@@ -12,11 +12,14 @@ import (
 	"github.com/BlackDark/renovate-server/internal/config"
 )
 
+// Runner owns one cron scheduler per platform (each with its own
+// timezone).
 type Runner struct {
 	crons []*cron.Cron
 	log   *slog.Logger
 }
 
+// New returns an empty Runner; register platforms with AddPlatform.
 func New(log *slog.Logger) *Runner {
 	return &Runner{log: log}
 }
@@ -45,6 +48,7 @@ func (r *Runner) AddPlatform(sched config.Schedule, job func()) error {
 	return nil
 }
 
+// Start begins firing all registered schedules.
 func (r *Runner) Start() {
 	for _, c := range r.crons {
 		c.Start()

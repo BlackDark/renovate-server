@@ -14,6 +14,7 @@ import (
 	"github.com/BlackDark/renovate-server/internal/platform"
 )
 
+// GitHub implements platform.Platform for github.com or GitHub Enterprise.
 type GitHub struct {
 	name            string
 	client          *gogithub.Client
@@ -27,6 +28,7 @@ type GitHub struct {
 	log             *slog.Logger
 }
 
+// New builds a GitHub adapter from its platform config section.
 func New(cfg config.Platform, log *slog.Logger) (*GitHub, error) {
 	client := gogithub.NewClient(nil).WithAuthToken(cfg.Token)
 	if cfg.BaseURL != "" && cfg.BaseURL != "https://github.com" {
@@ -54,10 +56,18 @@ func New(cfg config.Platform, log *slog.Logger) (*GitHub, error) {
 	}, nil
 }
 
-func (g *GitHub) Name() string              { return g.name }
-func (g *GitHub) WebhookPath() string       { return g.webhookPath }
+// Name returns the platform's configured name.
+func (g *GitHub) Name() string { return g.name }
+
+// WebhookPath returns the HTTP path this platform's webhooks arrive on.
+func (g *GitHub) WebhookPath() string { return g.webhookPath }
+
+// Schedule returns the platform's cron configuration.
 func (g *GitHub) Schedule() config.Schedule { return g.schedule }
 
+// ParseWebhook verifies the HMAC signature and maps supported events
+// (edited PR/issue with newly checked boxes, default-branch push) to a
+// run request; unsupported or irrelevant events return (nil, nil).
 func (g *GitHub) ParseWebhook(r *http.Request, body []byte) (*platform.Event, error) {
 	sig := r.Header.Get(gogithub.SHA256SignatureHeader)
 	if err := gogithub.ValidateSignature(sig, body, g.secret); err != nil {
@@ -126,6 +136,8 @@ func (g *GitHub) event(fullName string, reason platform.Reason) *platform.Event 
 	}
 }
 
+// DiscoverRepos lists all repos of the configured orgs, honoring the
+// archived filter.
 func (g *GitHub) DiscoverRepos(ctx context.Context) ([]platform.Repo, error) {
 	var repos []platform.Repo
 	for _, org := range g.orgs {

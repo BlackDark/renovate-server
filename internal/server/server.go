@@ -25,12 +25,15 @@ type Enqueuer interface {
 	Enqueue(ev platform.Event)
 }
 
+// Server routes webhook and operational HTTP endpoints.
 type Server struct {
 	mux   *http.ServeMux
 	ready atomic.Bool
 	log   *slog.Logger
 }
 
+// New builds the HTTP surface: one webhook route per platform plus
+// healthz, readyz, metrics and the status API.
 func New(platforms []platform.Platform, enq Enqueuer, st store.Store,
 	reg *prometheus.Registry, m *metrics.Metrics, log *slog.Logger) *Server {
 	s := &Server{mux: http.NewServeMux(), log: log}
@@ -57,6 +60,7 @@ func New(platforms []platform.Platform, enq Enqueuer, st store.Store,
 	return s
 }
 
+// Handler returns the root HTTP handler.
 func (s *Server) Handler() http.Handler { return s.mux }
 
 // SetReady flips the readiness probe; main calls it after startup completes.
