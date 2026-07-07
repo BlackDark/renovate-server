@@ -1,0 +1,4 @@
+/renovate-server
+/dist/
+coverage.out
+*.test
