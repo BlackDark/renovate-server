@@ -1,0 +1,22 @@
+services:
+  renovate-server:
+    image: ghcr.io/blackdark/renovate-server:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      GITLAB_TOKEN: ${GITLAB_TOKEN:?required}
+      GITLAB_WEBHOOK_SECRET: ${GITLAB_WEBHOOK_SECRET:?required}
+      PIPELINE_TRIGGER_TOKEN: ${PIPELINE_TRIGGER_TOKEN:?required}
+    volumes:
+      - ./config.yaml:/etc/renovate-server/config.yaml:ro
+      # Only needed for the docker executor:
+      # - /var/run/docker.sock:/var/run/docker.sock
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    # The distroless image has no shell/wget: use an external monitor or
+    # kubernetes probes for HTTP health checks.
+
+volumes:
+  renovate-cache:
