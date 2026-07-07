@@ -1,0 +1,71 @@
+# Example renovate-server configuration.
+# ${VAR} references are expanded from the environment at startup;
+# unset variables are a fatal error.
+server:
+  listen: ":8080"
+  log:
+    level: info
+    format: json
+  debounce: 10s
+  maxConcurrentRuns: 4
+  runTimeout: 60m
+
+platforms:
+  - name: company-gitlab
+    type: gitlab
+    baseURL: https://gitlab.company.io
+    token: ${GITLAB_TOKEN}
+    botEmail: renovate-bot@company.io
+    webhook:
+      path: /webhook/gitlab
+      secret: ${GITLAB_WEBHOOK_SECRET}
+    events: [merge_request, issue]   # add "push" to react to default-branch pushes
+    discovery:
+      groups: [my-top-group]
+      excludeArchived: true
+    schedule:
+      crontabs: ["0 3 * * *"]
+      timezone: Europe/Berlin
+
+executors:
+  # Triggers a pipeline in a central renovate runner project.
+  - name: ci-trigger
+    type: gitlabPipeline
+    platform: company-gitlab
+    project: infra/renovate-runner
+    ref: main
+    triggerToken: ${PIPELINE_TRIGGER_TOKEN}
+    variables:
+      RENOVATE_REPO: "{{ .Repo }}"
+      TRIGGER_REASON: "{{ .Reason }}"
+    pollInterval: 15s
+
+  # Spawns kubernetes jobs running the renovate image.
+  # - name: k8s
+  #   type: kubernetes
+  #   namespace: renovate
+  #   image: renovate/renovate:41
+  #   cachePVC: renovate-cache
+  #   jobTTL: 1h
+  #   env:
+  #     RENOVATE_PLATFORM: gitlab
+  #     RENOVATE_ENDPOINT: https://gitlab.company.io/api/v4
+  #     RENOVATE_TOKEN: ${RENOVATE_TOKEN}
+  #     RENOVATE_REDIS_URL: ${REDIS_URL}
+
+  # Runs renovate containers on the local docker daemon.
+  # - name: local-docker
+  #   type: docker
+  #   image: renovate/renovate:41
+  #   cacheVolume: renovate-cache
+  #   pull: true
+  #   env:
+  #     RENOVATE_PLATFORM: gitlab
+  #     RENOVATE_ENDPOINT: https://gitlab.company.io/api/v4
+  #     RENOVATE_TOKEN: ${RENOVATE_TOKEN}
+
+rules:  # first match wins; a catch-all "**" rule is required
+  - match: "my-top-group/legacy/**"
+    disabled: true
+  - match: "**"
+    executor: ci-trigger

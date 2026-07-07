@@ -93,6 +93,16 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadIgnoresEnvVarsInComments(t *testing.T) {
+	t.Setenv("TEST_GL_TOKEN", "x")
+	t.Setenv("TEST_GL_SECRET", "y")
+	commented := strings.Replace(validConfig, "server:",
+		"# commented out: token: ${TOTALLY_UNSET_VAR}\nserver:", 1)
+	if _, err := Load(writeConfig(t, commented)); err != nil {
+		t.Fatalf("unset var in comment must not fail load: %v", err)
+	}
+}
+
 func TestLoadUnsetEnvVarFails(t *testing.T) {
 	t.Setenv("TEST_GL_TOKEN", "x")
 	os.Unsetenv("TEST_GL_SECRET")

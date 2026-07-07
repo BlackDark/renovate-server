@@ -22,13 +22,21 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
 
-	expanded, err := expandEnv(raw)
-	if err != nil {
-		return nil, err
+	var root yaml.Node
+	if err := yaml.Unmarshal(raw, &root); err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+
+	// Expansion happens on parsed string scalars, not raw bytes, so ${VAR}
+	// references inside YAML comments are ignored.
+	var missing []string
+	expandNode(&root, &missing)
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("unset environment variables referenced in config: %v", missing)
 	}
 
 	var cfg Config
-	if err := yaml.Unmarshal(expanded, &cfg); err != nil {
+	if err := root.Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 
@@ -39,21 +47,21 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-func expandEnv(raw []byte) ([]byte, error) {
-	var missing []string
-	out := envVarPattern.ReplaceAllFunc(raw, func(m []byte) []byte {
-		name := string(envVarPattern.FindSubmatch(m)[1])
-		val, ok := os.LookupEnv(name)
-		if !ok {
-			missing = append(missing, name)
-			return m
-		}
-		return []byte(val)
-	})
-	if len(missing) > 0 {
-		return nil, fmt.Errorf("unset environment variables referenced in config: %v", missing)
+func expandNode(n *yaml.Node, missing *[]string) {
+	if n.Kind == yaml.ScalarNode && n.Tag == "!!str" {
+		n.Value = envVarPattern.ReplaceAllStringFunc(n.Value, func(m string) string {
+			name := envVarPattern.FindStringSubmatch(m)[1]
+			val, ok := os.LookupEnv(name)
+			if !ok {
+				*missing = append(*missing, name)
+				return m
+			}
+			return val
+		})
 	}
-	return out, nil
+	for _, c := range n.Content {
+		expandNode(c, missing)
+	}
 }
 
 func (c *Config) applyDefaults() {
