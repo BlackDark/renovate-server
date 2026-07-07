@@ -1,0 +1,17 @@
+{{- if .Values.cache.pvc.create }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.cache.pvc.name }}
+  labels:
+    {{- include "renovate-server.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml .Values.cache.pvc.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.cache.pvc.size }}
+  {{- with .Values.cache.pvc.storageClassName }}
+  storageClassName: {{ . }}
+  {{- end }}
+{{- end }}
