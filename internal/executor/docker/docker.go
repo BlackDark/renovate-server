@@ -2,12 +2,15 @@
 package docker
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"log/slog"
 	"sort"
 	"time"
+
+	"github.com/docker/docker/pkg/stdcopy"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
@@ -32,6 +35,7 @@ type API interface {
 		netCfg *network.NetworkingConfig, platform *ocispec.Platform, name string) (container.CreateResponse, error)
 	ContainerStart(ctx context.Context, id string, opts container.StartOptions) error
 	ContainerWait(ctx context.Context, id string, cond container.WaitCondition) (<-chan container.WaitResponse, <-chan error)
+	ContainerLogs(ctx context.Context, id string, opts container.LogsOptions) (io.ReadCloser, error)
 	ContainerRemove(ctx context.Context, id string, opts container.RemoveOptions) error
 }
 
@@ -121,6 +125,7 @@ func (e *Executor) Run(ctx context.Context, spec executor.RunSpec) error {
 	select {
 	case resp := <-respCh:
 		if resp.StatusCode != 0 {
+			log.Error("renovate container failed", "exitCode", resp.StatusCode, "logTail", e.logTail(ctx, created.ID))
 			return fmt.Errorf("renovate container finished with exit code %d", resp.StatusCode)
 		}
 		return nil
@@ -132,4 +137,24 @@ func (e *Executor) Run(ctx context.Context, spec executor.RunSpec) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// logTail fetches the container's last log lines for diagnostics; the
+// container is removed right after the run, so this is the only chance to
+// see why it failed. Best-effort: errors are reported inline, never fatal.
+func (e *Executor) logTail(ctx context.Context, id string) string {
+	logsCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), removeTimeout)
+	defer cancel()
+	rc, err := e.api.ContainerLogs(logsCtx, id, container.LogsOptions{
+		ShowStdout: true, ShowStderr: true, Tail: "50",
+	})
+	if err != nil {
+		return "<failed to fetch logs: " + err.Error() + ">"
+	}
+	defer func() { _ = rc.Close() }()
+	var buf bytes.Buffer
+	if _, err := stdcopy.StdCopy(&buf, &buf, io.LimitReader(rc, 64<<10)); err != nil {
+		return "<failed to read logs: " + err.Error() + ">"
+	}
+	return buf.String()
 }

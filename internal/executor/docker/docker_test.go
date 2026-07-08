@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -21,14 +22,29 @@ import (
 )
 
 type fakeAPI struct {
-	mu        sync.Mutex
-	pulled    []string
-	created   *container.Config
-	hostCfg   *container.HostConfig
-	started   bool
-	removed   bool
-	exitCode  int64
-	waitDelay time.Duration
+	mu            sync.Mutex
+	pulled        []string
+	created       *container.Config
+	hostCfg       *container.HostConfig
+	started       bool
+	removed       bool
+	exitCode      int64
+	waitDelay     time.Duration
+	logsRequested bool
+	logsTail      string
+}
+
+func (f *fakeAPI) ContainerLogs(_ context.Context, _ string, opts container.LogsOptions) (io.ReadCloser, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.logsRequested = true
+	f.logsTail = opts.Tail
+	// multiplexed stream: header{stream=1(stdout), len} + payload
+	payload := []byte("ERROR: renovate failed\n")
+	var buf bytes.Buffer
+	buf.Write([]byte{1, 0, 0, 0, 0, 0, 0, byte(len(payload))})
+	buf.Write(payload)
+	return io.NopCloser(&buf), nil
 }
 
 func (f *fakeAPI) ImagePull(_ context.Context, ref string, _ image.PullOptions) (io.ReadCloser, error) {
@@ -132,6 +148,9 @@ func TestRunSuccess(t *testing.T) {
 	if !api.started || !api.wasRemoved() {
 		t.Errorf("started=%v removed=%v, want both true", api.started, api.removed)
 	}
+	if api.logsRequested {
+		t.Error("logs must not be fetched for successful runs")
+	}
 }
 
 func TestRunPullsWhenConfigured(t *testing.T) {
@@ -154,6 +173,12 @@ func TestRunNonZeroExit(t *testing.T) {
 	}
 	if !api.wasRemoved() {
 		t.Error("container not removed after failure")
+	}
+	if !api.logsRequested {
+		t.Error("logs must be fetched for failed runs")
+	}
+	if api.logsTail != "50" {
+		t.Errorf("logs tail = %q, want 50", api.logsTail)
 	}
 }
 
