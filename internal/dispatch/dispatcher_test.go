@@ -209,6 +209,28 @@ func TestAdoptedRunBlocksNewRunsUntilDone(t *testing.T) {
 	shutdown(t, d)
 }
 
+func TestSetRouterSwapsRules(t *testing.T) {
+	exec := newBlockingExecutor()
+	close(exec.release)
+	d := testDispatcher(t, exec, Options{})
+	newRouter, err := NewRouter([]config.Rule{
+		{Match: "g/a", Disabled: true},
+		{Match: "**", Executor: "fake"},
+	}, map[string]executor.Executor{"fake": exec})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.SetRouter(newRouter)
+	d.Enqueue(event("g/a")) // now disabled
+	time.Sleep(20 * time.Millisecond)
+	if exec.runCount() != 0 {
+		t.Fatal("disabled repo ran after router swap")
+	}
+	d.Enqueue(event("g/b"))
+	waitFor(t, func() bool { return exec.runCount() == 1 }, "other repo runs")
+	shutdown(t, d)
+}
+
 type fakeRecorder struct {
 	mu      sync.Mutex
 	entries []history.Entry

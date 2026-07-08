@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"reflect"
 	"strings"
 	"syscall"
 	"time"
@@ -57,7 +58,7 @@ func run(configPath string) error {
 		return err
 	}
 
-	log, err := newLogger(cfg.Server.Log)
+	log, levelVar, err := newLogger(cfg.Server.Log)
 	if err != nil {
 		return err
 	}
@@ -203,6 +204,36 @@ func run(configPath string) error {
 	}
 	sched.Start()
 
+	// SIGHUP reloads rules and log level. Platform/executor changes need a
+	// restart: refusing them here avoids half-applied configurations.
+	hup := make(chan os.Signal, 1)
+	signal.Notify(hup, syscall.SIGHUP)
+	go func() {
+		for range hup {
+			newCfg, err := config.Load(configPath)
+			if err != nil {
+				log.Error("config reload failed, keeping old config", "error", err)
+				continue
+			}
+			if !reflect.DeepEqual(newCfg.Platforms, cfg.Platforms) || !reflect.DeepEqual(newCfg.Executors, cfg.Executors) {
+				log.Error("platforms/executors changed: reload refused, restart required")
+				continue
+			}
+			newRouter, err := dispatch.NewRouter(newCfg.Rules, executors)
+			if err != nil {
+				log.Error("config reload failed, keeping old rules", "error", err)
+				continue
+			}
+			disp.SetRouter(newRouter)
+			var lvl slog.Level
+			if err := lvl.UnmarshalText([]byte(newCfg.Server.Log.Level)); err == nil {
+				levelVar.Set(lvl)
+			}
+			cfg.Rules = newCfg.Rules
+			log.Info("config reloaded", "rules", len(newCfg.Rules), "logLevel", newCfg.Server.Log.Level)
+		}
+	}()
+
 	// HTTP server.
 	srv := server.New(platforms, disp, st, hist, reg, m, log)
 	httpServer := &http.Server{
@@ -237,12 +268,14 @@ func run(configPath string) error {
 	return nil
 }
 
-func newLogger(cfg config.Log) (*slog.Logger, error) {
+func newLogger(cfg config.Log) (*slog.Logger, *slog.LevelVar, error) {
 	var level slog.Level
 	if err := level.UnmarshalText([]byte(cfg.Level)); err != nil {
-		return nil, fmt.Errorf("invalid log level %q", cfg.Level)
+		return nil, nil, fmt.Errorf("invalid log level %q", cfg.Level)
 	}
-	opts := &slog.HandlerOptions{Level: level}
+	levelVar := new(slog.LevelVar)
+	levelVar.Set(level)
+	opts := &slog.HandlerOptions{Level: levelVar}
 	var handler slog.Handler
 	switch cfg.Format {
 	case "json":
@@ -250,7 +283,7 @@ func newLogger(cfg config.Log) (*slog.Logger, error) {
 	case "text":
 		handler = slog.NewTextHandler(os.Stderr, opts)
 	default:
-		return nil, fmt.Errorf("invalid log format %q", cfg.Format)
+		return nil, nil, fmt.Errorf("invalid log format %q", cfg.Format)
 	}
-	return slog.New(handler), nil
+	return slog.New(handler), levelVar, nil
 }

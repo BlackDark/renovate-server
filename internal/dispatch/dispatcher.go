@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/BlackDark/renovate-server/internal/executor"
@@ -51,7 +52,7 @@ type Options struct {
 // rerun coalescing, global concurrency and the run timeout.
 type Dispatcher struct {
 	store   store.Store
-	router  *Router
+	router  atomic.Pointer[Router]
 	opts    Options
 	sem     chan struct{}
 	wg      sync.WaitGroup
@@ -71,21 +72,28 @@ func NewDispatcher(st store.Store, router *Router, opts Options) *Dispatcher {
 		opts.History = noopRecorder{}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Dispatcher{
+	d := &Dispatcher{
 		store:   st,
-		router:  router,
 		opts:    opts,
 		sem:     make(chan struct{}, opts.MaxConcurrent),
 		baseCtx: ctx,
 		cancel:  cancel,
 	}
+	d.router.Store(router)
+	return d
+}
+
+// SetRouter atomically swaps the routing rules; subsequent Enqueues use
+// the new rules, in-flight runs are unaffected. Used for SIGHUP reloads.
+func (d *Dispatcher) SetRouter(r *Router) {
+	d.router.Store(r)
 }
 
 // Enqueue requests a run for the event's repo. Duplicate requests coalesce:
 // one pending run while queued, one deferred rerun while running.
 func (d *Dispatcher) Enqueue(ev platform.Event) {
 	log := d.opts.Log.With("repo", ev.Repo.Key(), "reason", string(ev.Reason))
-	route := d.router.Route(ev.Repo.FullName)
+	route := d.router.Load().Route(ev.Repo.FullName)
 	if route.Disabled {
 		log.Debug("repo disabled by rules, ignoring")
 		return
