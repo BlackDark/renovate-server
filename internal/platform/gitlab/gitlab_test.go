@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/BlackDark/renovate-server/internal/config"
@@ -24,6 +25,7 @@ func testConfig(baseURL string) config.Platform {
 		Webhook:             config.Webhook{Path: "/webhook/gitlab", Secret: "s3cret"},
 		Events:              []string{"merge_request", "issue", "push"},
 		DashboardIssueTitle: "Dependency Dashboard",
+		MRFilter:            config.MRFilter{SourceBranchPrefixes: []string{"renovate/"}},
 		Discovery: config.Discovery{
 			Groups:          []string{"top-group"},
 			ExcludeArchived: true,
@@ -73,6 +75,42 @@ const issueTickedWrongTitle = `{
   "project": {"path_with_namespace": "top-group/app", "default_branch": "main"},
   "object_attributes": {"iid": 2, "action": "update", "title": "Some Issue", "description": "- [x] <!-- approve-all-pending-prs -->approve"},
   "changes": {"description": {"previous": "- [ ] <!-- approve-all-pending-prs -->approve", "current": "- [x] <!-- approve-all-pending-prs -->approve"}}
+}`
+
+// Real-world shape: no per-checkbox markers, but renovate-debug comment at
+// the end of the description (as produced by current renovate versions).
+const mrRenovateDebugTicked = `{
+  "object_kind": "merge_request",
+  "project": {"path_with_namespace": "top-group/app", "default_branch": "main"},
+  "object_attributes": {"iid": 8, "action": "update", "source_branch": "chore/update-foo",
+    "description": "- [x] rebase\n\n<!--renovate-debug:eyJjcmVhdGVkSW5WZXIiOiI0My4yNDEuNSJ9-->"},
+  "changes": {"description": {
+    "previous": "- [ ] rebase\n\n<!--renovate-debug:eyJjcmVhdGVkSW5WZXIiOiI0My4yNDEuNSJ9-->",
+    "current": "- [x] rebase\n\n<!--renovate-debug:eyJjcmVhdGVkSW5WZXIiOiI0My4yNDEuNSJ9-->"}}
+}`
+
+const mrRenovateBranchTicked = `{
+  "object_kind": "merge_request",
+  "project": {"path_with_namespace": "top-group/app", "default_branch": "main"},
+  "object_attributes": {"iid": 9, "action": "update", "source_branch": "renovate/golang-deps",
+    "description": "- [x] rebase"},
+  "changes": {"description": {"previous": "- [ ] rebase", "current": "- [x] rebase"}}
+}`
+
+const mrHumanTicked = `{
+  "object_kind": "merge_request",
+  "project": {"path_with_namespace": "top-group/app", "default_branch": "main"},
+  "object_attributes": {"iid": 10, "action": "update", "source_branch": "feature/todo-list",
+    "description": "- [x] human task"},
+  "changes": {"description": {"previous": "- [ ] human task", "current": "- [x] human task"}}
+}`
+
+const mrAuthorTicked = `{
+  "object_kind": "merge_request",
+  "project": {"path_with_namespace": "top-group/app", "default_branch": "main"},
+  "object_attributes": {"iid": 11, "action": "update", "source_branch": "feature/custom-branch",
+    "author_id": 42, "description": "- [x] rebase"},
+  "changes": {"description": {"previous": "- [ ] rebase", "current": "- [x] rebase"}}
 }`
 
 const mrNoDescriptionChange = `{
@@ -134,6 +172,15 @@ func TestParseWebhookEvents(t *testing.T) {
 		{"mr checkbox unticked", "Merge Request Hook", mrUnticked, nil},
 		{"mr without description change", "Merge Request Hook", mrNoDescriptionChange, nil},
 		{"mr checkbox without renovate marker ignored", "Merge Request Hook", mrTickedNoMarker, nil},
+		{"renovate-debug marker identifies MR, plain checkbox triggers", "Merge Request Hook", mrRenovateDebugTicked, &platform.Event{
+			Repo:   platform.Repo{Platform: "gl", FullName: "top-group/app"},
+			Reason: platform.ReasonMergeRequest,
+		}},
+		{"renovate branch prefix identifies MR, plain checkbox triggers", "Merge Request Hook", mrRenovateBranchTicked, &platform.Event{
+			Repo:   platform.Repo{Platform: "gl", FullName: "top-group/app"},
+			Reason: platform.ReasonMergeRequest,
+		}},
+		{"human MR with plain checkbox ignored", "Merge Request Hook", mrHumanTicked, nil},
 		{"issue with wrong title ignored", "Issue Hook", issueTickedWrongTitle, nil},
 		{"issue checkbox ticked", "Issue Hook", issueTicked, &platform.Event{
 			Repo:   platform.Repo{Platform: "gl", FullName: "top-group/app"},
@@ -233,6 +280,64 @@ func TestParseWebhookNoGroupsAllowsAll(t *testing.T) {
 	got, err := g.ParseWebhook(r, []byte(body))
 	if err != nil || got == nil {
 		t.Fatalf("empty groups must allow all repos, got %+v, %v", got, err)
+	}
+}
+
+func TestParseWebhookAuthorIdentifiesMR(t *testing.T) {
+	var userLookups atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v4/users/42", func(w http.ResponseWriter, _ *http.Request) {
+		userLookups.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id": 42, "username": "renovate-bot"}`)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	cfg := testConfig(srv.URL)
+	cfg.MRFilter = config.MRFilter{
+		SourceBranchPrefixes: []string{"renovate/"},
+		Authors:              []string{"renovate-bot"},
+	}
+	g, err := New(cfg, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := range 2 { // second call must hit the cache
+		r := webhookRequest("Merge Request Hook", "s3cret", mrAuthorTicked)
+		got, err := g.ParseWebhook(r, []byte(mrAuthorTicked))
+		if err != nil || got == nil {
+			t.Fatalf("call %d: author-matched MR must trigger, got %+v, %v", i, got, err)
+		}
+	}
+	if n := userLookups.Load(); n != 1 {
+		t.Fatalf("user lookups = %d, want 1 (cached)", n)
+	}
+}
+
+func TestParseWebhookAuthorMismatchIgnored(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v4/users/42", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id": 42, "username": "some-human"}`)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	cfg := testConfig(srv.URL)
+	cfg.MRFilter = config.MRFilter{
+		SourceBranchPrefixes: []string{"renovate/"},
+		Authors:              []string{"renovate-bot"},
+	}
+	g, err := New(cfg, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := webhookRequest("Merge Request Hook", "s3cret", mrAuthorTicked)
+	got, err := g.ParseWebhook(r, []byte(mrAuthorTicked))
+	if err != nil || got != nil {
+		t.Fatalf("non-renovate author must not trigger, got %+v, %v", got, err)
 	}
 }
 

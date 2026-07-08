@@ -67,10 +67,23 @@ type Platform struct {
 	// AllowAnyCheckbox reverts to triggering on any checked markdown todo
 	// item instead of requiring Renovate's HTML comment markers.
 	AllowAnyCheckbox bool      `yaml:"allowAnyCheckbox"`
+	MRFilter         MRFilter  `yaml:"mrFilter"`
 	Webhook          Webhook   `yaml:"webhook"`
 	Events           []string  `yaml:"events"` // merge_request|issue|push
 	Discovery        Discovery `yaml:"discovery"`
 	Schedule         Schedule  `yaml:"schedule"`
+}
+
+// MRFilter identifies renovate MRs/PRs so checkbox ticks inside them
+// trigger runs even without per-checkbox markers. An MR counts as a
+// renovate MR when ANY signal matches: renovate-debug marker in the
+// description (always checked), source branch prefix, or author.
+type MRFilter struct {
+	// SourceBranchPrefixes match the MR source branch. Default ["renovate/"].
+	SourceBranchPrefixes []string `yaml:"sourceBranchPrefixes"`
+	// Authors match the MR/PR author username (GitLab: resolved via API and
+	// cached; GitHub: login from the payload). Empty = signal disabled.
+	Authors []string `yaml:"authors"`
 }
 
 // Webhook is the receiving endpoint for a platform's webhooks.

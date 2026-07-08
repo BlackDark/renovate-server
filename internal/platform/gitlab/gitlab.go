@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
+	"sync"
 
 	gogitlab "gitlab.com/gitlab-org/api/client-go"
 
@@ -25,11 +27,17 @@ type GitLab struct {
 	botEmail            string
 	dashboardIssueTitle string
 	allowAnyCheckbox    bool
+	mrFilter            config.MRFilter
 	events              map[string]bool
 	groups              []string
 	excludeArchived     bool
 	schedule            config.Schedule
 	log                 *slog.Logger
+
+	// usernames caches author-id -> username lookups for the MR author
+	// signal; usernames change rarely enough to cache for process lifetime.
+	userMu    sync.Mutex
+	usernames map[int64]string
 }
 
 // New builds a GitLab adapter from its platform config section.
@@ -50,6 +58,8 @@ func New(cfg config.Platform, log *slog.Logger) (*GitLab, error) {
 		botEmail:            cfg.BotEmail,
 		dashboardIssueTitle: cfg.DashboardIssueTitle,
 		allowAnyCheckbox:    cfg.AllowAnyCheckbox,
+		mrFilter:            cfg.MRFilter,
+		usernames:           map[int64]string{},
 		events:              events,
 		groups:              cfg.Discovery.Groups,
 		excludeArchived:     cfg.Discovery.ExcludeArchived,
@@ -89,7 +99,7 @@ func (g *GitLab) ParseWebhook(r *http.Request, body []byte) (*platform.Event, er
 		if !g.events["merge_request"] {
 			return nil, nil
 		}
-		if !g.ticked(ev.Changes.Description.Previous, ev.Changes.Description.Current) {
+		if !g.mrTicked(r.Context(), ev) {
 			return nil, nil
 		}
 		return g.event(ev.Project.PathWithNamespace, platform.ReasonMergeRequest), nil
@@ -135,6 +145,57 @@ func (g *GitLab) ticked(previous, current string) bool {
 		count = platform.CheckedItems
 	}
 	return count(current) > count(previous)
+}
+
+// mrTicked decides whether an MR description edit is a renovate checkbox
+// tick. MRs identified as renovate MRs (debug marker, source branch or
+// author) trigger on any checkbox; others need per-checkbox markers.
+func (g *GitLab) mrTicked(ctx context.Context, ev *gogitlab.MergeEvent) bool {
+	previous, current := ev.Changes.Description.Previous, ev.Changes.Description.Current
+	if current == "" {
+		return false
+	}
+	if g.allowAnyCheckbox || g.isRenovateMR(ctx, ev) {
+		return platform.CheckedItems(current) > platform.CheckedItems(previous)
+	}
+	return platform.CheckedMarkerItems(current) > platform.CheckedMarkerItems(previous)
+}
+
+func (g *GitLab) isRenovateMR(ctx context.Context, ev *gogitlab.MergeEvent) bool {
+	if platform.HasRenovateDebugMarker(ev.ObjectAttributes.Description) {
+		return true
+	}
+	if platform.BranchHasPrefix(g.mrFilter.SourceBranchPrefixes, ev.ObjectAttributes.SourceBranch) {
+		return true
+	}
+	if len(g.mrFilter.Authors) == 0 {
+		return false
+	}
+	username := g.authorUsername(ctx, ev.ObjectAttributes.AuthorID)
+	return username != "" && slices.Contains(g.mrFilter.Authors, username)
+}
+
+// authorUsername resolves a user id to a username via the API, cached for
+// the process lifetime. Returns "" when the lookup fails.
+func (g *GitLab) authorUsername(ctx context.Context, id int64) string {
+	if id == 0 {
+		return ""
+	}
+	g.userMu.Lock()
+	name, ok := g.usernames[id]
+	g.userMu.Unlock()
+	if ok {
+		return name
+	}
+	user, _, err := g.client.Users.GetUser(id, gogitlab.GetUsersOptions{}, gogitlab.WithContext(ctx))
+	if err != nil {
+		g.log.Warn("author lookup failed", "authorId", id, "error", err)
+		return ""
+	}
+	g.userMu.Lock()
+	g.usernames[id] = user.Username
+	g.userMu.Unlock()
+	return user.Username
 }
 
 func (g *GitLab) event(fullName string, reason platform.Reason) *platform.Event {

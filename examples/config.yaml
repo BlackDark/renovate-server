@@ -25,6 +25,9 @@ platforms:
     botEmail: renovate-bot@company.io
     # dashboardIssueTitle: Dependency Dashboard  # "*" disables the title filter
     # allowAnyCheckbox: false  # true = trigger on any checked todo item (pre-v0.2 behavior)
+    # mrFilter:                # what identifies a renovate MR (any signal suffices;
+    #   sourceBranchPrefixes: [renovate/]   # the renovate-debug comment always counts)
+    #   authors: [renovate-bot]
     webhook:
       path: /webhook/gitlab
       secret: ${GITLAB_WEBHOOK_SECRET}

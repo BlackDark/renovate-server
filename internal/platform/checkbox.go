@@ -1,6 +1,27 @@
 package platform
 
-import "regexp"
+import (
+	"regexp"
+	"strings"
+)
+
+// HasRenovateDebugMarker reports whether text contains renovate's debug
+// HTML comment ("<!--renovate-debug:...-->"). Renovate appends it to every
+// MR/PR description, so it reliably identifies renovate MRs even when the
+// checkbox lines carry no markers.
+func HasRenovateDebugMarker(text string) bool {
+	return strings.Contains(text, "<!--renovate-debug:")
+}
+
+// BranchHasPrefix reports whether branch starts with any of the prefixes.
+func BranchHasPrefix(prefixes []string, branch string) bool {
+	for _, p := range prefixes {
+		if strings.HasPrefix(branch, p) {
+			return true
+		}
+	}
+	return false
+}
 
 var checkedItem = regexp.MustCompile(`(?mi)^\s*(?:[-*+]|\d+\.)\s+\[x\]`)
 

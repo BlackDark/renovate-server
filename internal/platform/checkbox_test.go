@@ -28,6 +28,38 @@ func TestCheckedItems(t *testing.T) {
 	}
 }
 
+func TestHasRenovateDebugMarker(t *testing.T) {
+	debug := "update deps\n\n- [x] rebase\n\n<!--renovate-debug:eyJjcmVhdGVkSW5WZXIiOiI0My4yNDEuNSJ9-->"
+	if !HasRenovateDebugMarker(debug) {
+		t.Error("real renovate-debug marker not detected")
+	}
+	if HasRenovateDebugMarker("- [x] rebase, no marker") {
+		t.Error("false positive without marker")
+	}
+	if HasRenovateDebugMarker("") {
+		t.Error("false positive on empty text")
+	}
+}
+
+func TestBranchHasPrefix(t *testing.T) {
+	cases := []struct {
+		prefixes []string
+		branch   string
+		want     bool
+	}{
+		{[]string{"renovate/"}, "renovate/golang-deps", true},
+		{[]string{"renovate/"}, "feature/renovate/x", false},
+		{[]string{"renovate/", "deps/"}, "deps/update-foo", true},
+		{[]string{"renovate/"}, "main", false},
+		{nil, "renovate/x", false},
+	}
+	for _, tc := range cases {
+		if got := BranchHasPrefix(tc.prefixes, tc.branch); got != tc.want {
+			t.Errorf("BranchHasPrefix(%v, %q) = %v, want %v", tc.prefixes, tc.branch, got, tc.want)
+		}
+	}
+}
+
 func TestCheckedMarkerItems(t *testing.T) {
 	cases := []struct {
 		name string

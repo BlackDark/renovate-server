@@ -27,6 +27,7 @@ func testConfig(baseURL string) config.Platform {
 		Webhook:             config.Webhook{Path: "/webhook/github", Secret: "s3cret"},
 		Events:              []string{"merge_request", "issue", "push"},
 		DashboardIssueTitle: "Dependency Dashboard",
+		MRFilter:            config.MRFilter{SourceBranchPrefixes: []string{"renovate/"}},
 		Discovery:           config.Discovery{Groups: []string{"my-org"}},
 	}
 }
@@ -72,6 +73,28 @@ const prTickedNoMarker = `{
   "action": "edited",
   "pull_request": {"body": "- [x] human task"},
   "changes": {"body": {"from": "- [ ] human task"}},
+  "repository": {"full_name": "my-org/app", "default_branch": "main"}
+}`
+
+const prRenovateDebugTicked = `{
+  "action": "edited",
+  "pull_request": {"head": {"ref": "chore/update-foo"},
+    "body": "- [x] rebase\n\n<!--renovate-debug:eyJjcmVhdGVkSW5WZXIiOiI0My4yNDEuNSJ9-->"},
+  "changes": {"body": {"from": "- [ ] rebase\n\n<!--renovate-debug:eyJjcmVhdGVkSW5WZXIiOiI0My4yNDEuNSJ9-->"}},
+  "repository": {"full_name": "my-org/app", "default_branch": "main"}
+}`
+
+const prRenovateBranchTicked = `{
+  "action": "edited",
+  "pull_request": {"head": {"ref": "renovate/golang-deps"}, "body": "- [x] rebase"},
+  "changes": {"body": {"from": "- [ ] rebase"}},
+  "repository": {"full_name": "my-org/app", "default_branch": "main"}
+}`
+
+const prAuthorTicked = `{
+  "action": "edited",
+  "pull_request": {"head": {"ref": "feature/custom"}, "user": {"login": "renovate-bot"}, "body": "- [x] rebase"},
+  "changes": {"body": {"from": "- [ ] rebase"}},
   "repository": {"full_name": "my-org/app", "default_branch": "main"}
 }`
 
@@ -124,6 +147,15 @@ func TestParseWebhookEvents(t *testing.T) {
 		}},
 		{"pr checkbox unticked", "pull_request", prUnticked, nil},
 		{"pr checkbox without renovate marker ignored", "pull_request", prTickedNoMarker, nil},
+		{"renovate-debug marker identifies PR, plain checkbox triggers", "pull_request", prRenovateDebugTicked, &platform.Event{
+			Repo:   platform.Repo{Platform: "gh", FullName: "my-org/app"},
+			Reason: platform.ReasonMergeRequest,
+		}},
+		{"renovate branch prefix identifies PR, plain checkbox triggers", "pull_request", prRenovateBranchTicked, &platform.Event{
+			Repo:   platform.Repo{Platform: "gh", FullName: "my-org/app"},
+			Reason: platform.ReasonMergeRequest,
+		}},
+		{"author not configured: custom-branch PR ignored", "pull_request", prAuthorTicked, nil},
 		{"issue with wrong title ignored", "issues", issueTickedWrongTitle, nil},
 		{"issue checkbox ticked", "issues", issueTicked, &platform.Event{
 			Repo:   platform.Repo{Platform: "gh", FullName: "my-org/app"},
@@ -152,6 +184,20 @@ func TestParseWebhookEvents(t *testing.T) {
 				t.Fatalf("event = %+v, want %+v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestParseWebhookAuthorIdentifiesPR(t *testing.T) {
+	cfg := testConfig("")
+	cfg.MRFilter.Authors = []string{"renovate-bot"}
+	g, err := New(cfg, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := webhookRequest("pull_request", "s3cret", prAuthorTicked)
+	got, err := g.ParseWebhook(r, []byte(prAuthorTicked))
+	if err != nil || got == nil {
+		t.Fatalf("author-matched PR must trigger, got %+v, %v", got, err)
 	}
 }
 

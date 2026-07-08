@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 
 	gogithub "github.com/google/go-github/v76/github"
 
@@ -23,6 +24,7 @@ type GitHub struct {
 	botEmail            string
 	dashboardIssueTitle string
 	allowAnyCheckbox    bool
+	mrFilter            config.MRFilter
 	events              map[string]bool
 	orgs                []string
 	excludeArchived     bool
@@ -52,6 +54,7 @@ func New(cfg config.Platform, log *slog.Logger) (*GitHub, error) {
 		botEmail:            cfg.BotEmail,
 		dashboardIssueTitle: cfg.DashboardIssueTitle,
 		allowAnyCheckbox:    cfg.AllowAnyCheckbox,
+		mrFilter:            cfg.MRFilter,
 		events:              events,
 		orgs:                cfg.Discovery.Groups,
 		excludeArchived:     cfg.Discovery.ExcludeArchived,
@@ -88,7 +91,7 @@ func (g *GitHub) ParseWebhook(r *http.Request, body []byte) (*platform.Event, er
 		if !g.events["merge_request"] || ev.GetAction() != "edited" {
 			return nil, nil
 		}
-		if !g.ticked(previousBody(ev.GetChanges()), ev.GetPullRequest().GetBody()) {
+		if !g.prTicked(ev) {
 			return nil, nil
 		}
 		return g.event(ev.GetRepo().GetFullName(), platform.ReasonMergeRequest), nil
@@ -141,6 +144,31 @@ func (g *GitHub) ticked(previous, current string) bool {
 		count = platform.CheckedItems
 	}
 	return count(current) > count(previous)
+}
+
+// prTicked decides whether a PR body edit is a renovate checkbox tick. PRs
+// identified as renovate PRs (debug marker, head branch or author) trigger
+// on any checkbox; others need per-checkbox markers.
+func (g *GitHub) prTicked(ev *gogithub.PullRequestEvent) bool {
+	previous, current := previousBody(ev.GetChanges()), ev.GetPullRequest().GetBody()
+	if current == "" {
+		return false
+	}
+	if g.allowAnyCheckbox || g.isRenovatePR(ev) {
+		return platform.CheckedItems(current) > platform.CheckedItems(previous)
+	}
+	return platform.CheckedMarkerItems(current) > platform.CheckedMarkerItems(previous)
+}
+
+func (g *GitHub) isRenovatePR(ev *gogithub.PullRequestEvent) bool {
+	pr := ev.GetPullRequest()
+	if platform.HasRenovateDebugMarker(pr.GetBody()) {
+		return true
+	}
+	if platform.BranchHasPrefix(g.mrFilter.SourceBranchPrefixes, pr.GetHead().GetRef()) {
+		return true
+	}
+	return len(g.mrFilter.Authors) > 0 && slices.Contains(g.mrFilter.Authors, pr.GetUser().GetLogin())
 }
 
 func (g *GitHub) event(fullName string, reason platform.Reason) *platform.Event {

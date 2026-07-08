@@ -10,8 +10,11 @@ guarantees a repository never has more than one run in flight.
 - **GitLab group webhooks** (one webhook on your top group covers all subgroups
   and projects) and **GitHub org webhooks**
   - MR/PR description edits where a Renovate checkbox got ticked (rebase/retry).
-    Only checkboxes carrying Renovate's HTML markers count, so ordinary task
-    lists in human MRs never trigger runs (`allowAnyCheckbox` reverts this)
+    An MR counts as a Renovate MR when its description carries the
+    `<!--renovate-debug:...-->` comment, its source branch matches
+    `mrFilter.sourceBranchPrefixes` (default `renovate/`) or its author is in
+    `mrFilter.authors`; any checkbox tick inside such an MR triggers. Ordinary
+    task lists in human MRs never trigger runs (`allowAnyCheckbox` reverts this)
   - Dependency-dashboard issue checkbox ticks (filtered by issue title)
   - Optional: pushes to the default branch (excluding Renovate's own commits)
   - Repos outside the configured `discovery.groups` are rejected, so a stray
@@ -83,7 +86,9 @@ a complete annotated example.
 | `token` | yes | API token used for repo discovery |
 | `botEmail` | no | Push events authored by this email are ignored |
 | `dashboardIssueTitle` | no | Issue events must match this title (default `Dependency Dashboard`, `*` = any) |
-| `allowAnyCheckbox` | no | Trigger on any checked todo item instead of Renovate-marked ones; also skips the title filter |
+| `allowAnyCheckbox` | no | Trigger on any checked todo item in any MR/issue; also skips the title filter |
+| `mrFilter.sourceBranchPrefixes` | no | Source-branch prefixes identifying Renovate MRs (default `["renovate/"]`) |
+| `mrFilter.authors` | no | MR/PR author usernames identifying Renovate MRs. GitHub: login from payload; GitLab: resolved via one cached API lookup per author |
 | `webhook.path` | yes | HTTP path the webhook is served on |
 | `webhook.secret` | yes | GitLab: `X-Gitlab-Token`; GitHub: HMAC secret |
 | `events` | no | Subset of `merge_request`, `issue`, `push` |

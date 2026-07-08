@@ -99,6 +99,9 @@ func (c *Config) applyDefaults() {
 		if c.Platforms[i].DashboardIssueTitle == "" {
 			c.Platforms[i].DashboardIssueTitle = "Dependency Dashboard"
 		}
+		if c.Platforms[i].MRFilter.SourceBranchPrefixes == nil {
+			c.Platforms[i].MRFilter.SourceBranchPrefixes = []string{"renovate/"}
+		}
 	}
 	for i := range c.Executors {
 		e := &c.Executors[i]
