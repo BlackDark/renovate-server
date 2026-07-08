@@ -76,6 +76,11 @@ executors:
   #     RENOVATE_ENDPOINT: https://gitlab.company.io/api/v4
   #     RENOVATE_TOKEN: ${RENOVATE_TOKEN}
 
+  # Shadow mode: accepts and records runs (see /api/v1/runs) without
+  # executing anything. Ideal first target for the catch-all rule.
+  # - name: shadow
+  #   type: noop
+
 rules:  # first match wins; a catch-all "**" rule is required
   - match: "my-top-group/legacy/**"
     disabled: true

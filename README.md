@@ -106,7 +106,15 @@ Common: `name`, `type` (`gitlabPipeline` | `kubernetes` | `docker`).
 **gitlabPipeline** — `platform` (a gitlab platform name), `project` (the runner
 project), `ref` (default `main`), `triggerToken`, `variables` (values are Go
 templates with `{{ .Repo }}`, `{{ .Platform }}`, `{{ .Reason }}`),
-`pollInterval` (default `15s`).
+`pollInterval` (default `15s`). See
+[examples/renovate-runner.gitlab-ci.yml](examples/renovate-runner.gitlab-ci.yml)
+for the receiving pipeline. With the Redis store, running pipelines are
+re-adopted after a server restart.
+
+**noop** — accepts runs, logs them, does nothing. Use it for a shadow-mode
+rollout: point the catch-all rule at a noop executor, wire up the production
+webhook, and watch `/api/v1/runs` to validate triggering against real traffic
+before switching the rule to a real executor.
 
 **kubernetes** — `namespace`, `image`, optional `cachePVC` (mounted at
 `/tmp/renovate/cache`), `jobTTL` (default `1h`), `env` (extra container env).
@@ -162,9 +170,10 @@ Metrics: `renovate_server_webhook_events_total{platform,outcome}`,
 
 Restart semantics: with the default memory store, queued runs are lost on
 restart. Running Kubernetes Jobs are re-adopted on startup via labels;
-pipeline/docker run tracking is lost — the run timeout and the next cron run
-heal stuck state. With the Redis store, queued repos are re-enqueued at
-startup and stale entries expire after `store.redis.ttl`. Failed runs are not
+docker run tracking is lost — the run timeout and the next cron run heal
+stuck state. With the Redis store, queued repos are re-enqueued at startup,
+running GitLab pipelines are re-adopted (polling resumes where it left off)
+and stale entries expire after `store.redis.ttl`. Failed runs are not
 auto-retried; the next event or cron run is the retry. Keep `replicaCount: 1`
 either way — coordination between replicas is not implemented.
 

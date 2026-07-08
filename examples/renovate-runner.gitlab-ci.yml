@@ -1,0 +1,40 @@
+# Reference pipeline for the central renovate-runner project that
+# renovate-server's gitlabPipeline executor triggers.
+#
+# Setup:
+#   1. Create a project (e.g. infra/renovate-runner) with this .gitlab-ci.yml.
+#   2. Settings -> CI/CD -> Pipeline trigger tokens: create a token and put it
+#      into the server's executor config as `triggerToken`.
+#   3. Settings -> CI/CD -> Variables: add RENOVATE_TOKEN (a bot user's PAT
+#      with api scope, masked).
+#
+# The server triggers with variables:
+#   RENOVATE_REPO   - the repository to run on (from `variables` templates)
+#   TRIGGER_REASON  - merge_request | issue | push | cron | rerun
+
+workflow:
+  rules:
+    # Only run when triggered by renovate-server (or manually with the vars set).
+    - if: $CI_PIPELINE_SOURCE == "trigger" && $RENOVATE_REPO
+    - if: $CI_PIPELINE_SOURCE == "web" && $RENOVATE_REPO
+
+renovate:
+  image: renovate/renovate:41
+  variables:
+    RENOVATE_PLATFORM: gitlab
+    RENOVATE_ENDPOINT: $CI_API_V4_URL
+    RENOVATE_REPOSITORIES: $RENOVATE_REPO
+    # Keep renovate's file cache inside the project dir so GitLab CI can cache it.
+    RENOVATE_BASE_DIR: $CI_PROJECT_DIR/renovate
+    LOG_LEVEL: info
+    # Optional cross-runner package cache:
+    # RENOVATE_REDIS_URL: $REDIS_URL
+  cache:
+    key: renovate-cache
+    paths:
+      - renovate/cache
+  script:
+    - echo "renovate run for $RENOVATE_REPO (reason: $TRIGGER_REASON)"
+    - renovate
+  timeout: 1h
+  interruptible: false
