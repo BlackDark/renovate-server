@@ -118,6 +118,11 @@ before switching the rule to a real executor.
 
 **kubernetes** — `namespace`, `image`, optional `cachePVC` (mounted at
 `/tmp/renovate/cache`), `jobTTL` (default `1h`), `env` (extra container env).
+Pod customization via `pod:`: `resources.requests`/`resources.limits`
+(quantity strings, validated at startup), `nodeSelector`, `tolerations`
+(`key`/`operator`/`value`/`effect`), `serviceAccountName`,
+`imagePullSecrets` (names), `activeDeadlineSeconds` (cluster-side kill
+switch; the server's `runTimeout` stays authoritative for the repo lock).
 
 **docker** — `image`, optional `cacheVolume` (mounted at
 `/tmp/renovate/cache`), `pull` (pull image before each run), `env`.

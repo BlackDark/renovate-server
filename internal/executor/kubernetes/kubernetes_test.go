@@ -113,6 +113,78 @@ func TestRunCreatesJobAndSucceeds(t *testing.T) {
 	}
 }
 
+func TestPodCustomization(t *testing.T) {
+	client := fake.NewClientset()
+	e := New(config.Executor{
+		Name:      "k8s",
+		Type:      config.ExecutorKubernetes,
+		Namespace: "renovate",
+		Image:     "renovate/renovate:41",
+		JobTTL:    time.Hour,
+		Pod: config.PodConfig{
+			Resources: config.ResourceConfig{
+				Requests: map[string]string{"cpu": "250m", "memory": "512Mi"},
+				Limits:   map[string]string{"memory": "2Gi"},
+			},
+			NodeSelector:          map[string]string{"kubernetes.io/arch": "amd64"},
+			Tolerations:           []config.Toleration{{Key: "ci", Operator: "Equal", Value: "renovate", Effect: "NoSchedule"}},
+			ServiceAccountName:    "renovate-runner",
+			ImagePullSecrets:      []string{"regcred"},
+			ActiveDeadlineSeconds: 3600,
+		},
+	}, client, slog.New(slog.DiscardHandler))
+	e.pollInterval = 5 * time.Millisecond
+	completeJob(t, client, true)
+	if err := e.Run(t.Context(), spec()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	jobs, _ := client.BatchV1().Jobs("renovate").List(t.Context(), metav1.ListOptions{})
+	job := jobs.Items[0]
+	pod := job.Spec.Template.Spec
+	res := pod.Containers[0].Resources
+	if res.Requests.Cpu().String() != "250m" || res.Requests.Memory().String() != "512Mi" {
+		t.Errorf("requests = %v", res.Requests)
+	}
+	if res.Limits.Memory().String() != "2Gi" {
+		t.Errorf("limits = %v", res.Limits)
+	}
+	if pod.NodeSelector["kubernetes.io/arch"] != "amd64" {
+		t.Errorf("nodeSelector = %v", pod.NodeSelector)
+	}
+	if len(pod.Tolerations) != 1 || pod.Tolerations[0].Key != "ci" ||
+		pod.Tolerations[0].Operator != corev1.TolerationOpEqual ||
+		pod.Tolerations[0].Effect != corev1.TaintEffectNoSchedule {
+		t.Errorf("tolerations = %+v", pod.Tolerations)
+	}
+	if pod.ServiceAccountName != "renovate-runner" {
+		t.Errorf("serviceAccountName = %q", pod.ServiceAccountName)
+	}
+	if len(pod.ImagePullSecrets) != 1 || pod.ImagePullSecrets[0].Name != "regcred" {
+		t.Errorf("imagePullSecrets = %+v", pod.ImagePullSecrets)
+	}
+	if job.Spec.ActiveDeadlineSeconds == nil || *job.Spec.ActiveDeadlineSeconds != 3600 {
+		t.Errorf("activeDeadlineSeconds = %v", job.Spec.ActiveDeadlineSeconds)
+	}
+}
+
+func TestPodDefaultsUnchanged(t *testing.T) {
+	client := fake.NewClientset()
+	e := testExecutor(client)
+	completeJob(t, client, true)
+	if err := e.Run(t.Context(), spec()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	jobs, _ := client.BatchV1().Jobs("renovate").List(t.Context(), metav1.ListOptions{})
+	job := jobs.Items[0]
+	pod := job.Spec.Template.Spec
+	if len(pod.Containers[0].Resources.Requests) != 0 || len(pod.NodeSelector) != 0 ||
+		len(pod.Tolerations) != 0 || pod.ServiceAccountName != "" ||
+		job.Spec.ActiveDeadlineSeconds != nil {
+		t.Errorf("unconfigured pod fields must stay empty: %+v", pod)
+	}
+}
+
 func TestRunJobFails(t *testing.T) {
 	client := fake.NewClientset()
 	e := testExecutor(client)

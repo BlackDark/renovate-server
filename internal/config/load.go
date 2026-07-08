@@ -9,6 +9,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/robfig/cron/v3"
 	"gopkg.in/yaml.v3"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 var envVarPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
@@ -203,6 +204,13 @@ func (c *Config) validate() error {
 			}
 			if e.Image == "" {
 				return fmt.Errorf("executor %q: image is required", e.Name)
+			}
+			for _, quantities := range []map[string]string{e.Pod.Resources.Requests, e.Pod.Resources.Limits} {
+				for name, val := range quantities {
+					if _, err := resource.ParseQuantity(val); err != nil {
+						return fmt.Errorf("executor %q: invalid resource quantity %s=%q: %w", e.Name, name, val, err)
+					}
+				}
 			}
 		case ExecutorDocker:
 			if e.Image == "" {
