@@ -109,15 +109,18 @@ func (g *GitLab) ParseWebhook(r *http.Request, body []byte) (*platform.Event, er
 			return nil, nil
 		}
 		// A matching title identifies renovate's dependency dashboard; any
-		// checkbox tick inside it triggers (dashboard checkboxes carry no
-		// reliable per-item markers on all renovate versions).
+		// checkbox tick inside it triggers. Unidentified issues (e.g. a
+		// dashboard renamed only in renovate config) still trigger when a
+		// marker-carrying checkbox gets ticked.
 		identified := g.allowAnyCheckbox || g.dashboardIssueTitle == "*" ||
 			ev.ObjectAttributes.Title == g.dashboardIssueTitle ||
 			platform.HasRenovateDebugMarker(ev.ObjectAttributes.Description)
-		if !identified {
-			return nil, nil
-		}
-		if !tickedPlain(ev.Changes.Description.Previous, ev.Changes.Description.Current) {
+		prev, cur := ev.Changes.Description.Previous, ev.Changes.Description.Current
+		if identified {
+			if !tickedPlain(prev, cur) {
+				return nil, nil
+			}
+		} else if cur == "" || platform.CheckedMarkerItems(cur) <= platform.CheckedMarkerItems(prev) {
 			return nil, nil
 		}
 		return g.event(ev.Project.PathWithNamespace, platform.ReasonIssue), nil

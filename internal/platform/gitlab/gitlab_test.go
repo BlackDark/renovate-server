@@ -190,7 +190,10 @@ func TestParseWebhookEvents(t *testing.T) {
 			Reason: platform.ReasonMergeRequest,
 		}},
 		{"human MR with plain checkbox ignored", "Merge Request Hook", mrHumanTicked, nil},
-		{"issue with wrong title ignored", "Issue Hook", issueTickedWrongTitle, nil},
+		{"issue with wrong title but renovate markers triggers (fallback)", "Issue Hook", issueTickedWrongTitle, &platform.Event{
+			Repo:   platform.Repo{Platform: "gl", FullName: "top-group/app"},
+			Reason: platform.ReasonIssue,
+		}},
 		{"issue checkbox ticked", "Issue Hook", issueTicked, &platform.Event{
 			Repo:   platform.Repo{Platform: "gl", FullName: "top-group/app"},
 			Reason: platform.ReasonIssue,

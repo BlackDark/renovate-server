@@ -112,6 +112,13 @@ const issueTickedWrongTitle = `{
   "repository": {"full_name": "my-org/app", "default_branch": "main"}
 }`
 
+const issueTickedWrongTitlePlain = `{
+  "action": "edited",
+  "issue": {"title": "Team TODO", "body": "- [x] buy coffee"},
+  "changes": {"body": {"from": "- [ ] buy coffee"}},
+  "repository": {"full_name": "my-org/app", "default_branch": "main"}
+}`
+
 const issueTickedPlain = `{
   "action": "edited",
   "issue": {"title": "Dependency Dashboard", "body": "- [x] Check this box to trigger a request for Renovate to run again"},
@@ -163,7 +170,11 @@ func TestParseWebhookEvents(t *testing.T) {
 			Reason: platform.ReasonMergeRequest,
 		}},
 		{"author not configured: custom-branch PR ignored", "pull_request", prAuthorTicked, nil},
-		{"issue with wrong title ignored", "issues", issueTickedWrongTitle, nil},
+		{"issue with wrong title but renovate markers triggers (fallback)", "issues", issueTickedWrongTitle, &platform.Event{
+			Repo:   platform.Repo{Platform: "gh", FullName: "my-org/app"},
+			Reason: platform.ReasonIssue,
+		}},
+		{"issue with wrong title and plain checkbox ignored", "issues", issueTickedWrongTitlePlain, nil},
 		{"issue checkbox ticked", "issues", issueTicked, &platform.Event{
 			Repo:   platform.Repo{Platform: "gh", FullName: "my-org/app"},
 			Reason: platform.ReasonIssue,

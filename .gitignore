@@ -2,3 +2,6 @@
 /dist/
 coverage.out
 *.test
+
+# local scratch files with raw payloads from private instances
+/gitlab-*.md

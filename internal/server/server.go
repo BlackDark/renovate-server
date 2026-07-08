@@ -19,7 +19,9 @@ import (
 	"github.com/BlackDark/renovate-server/internal/store"
 )
 
-const maxWebhookBody = 1 << 20 // 1 MiB
+// Renovate MR descriptions with release notes easily reach hundreds of KiB
+// and appear up to three times per payload (description + change diff).
+const maxWebhookBody = 5 << 20 // 5 MiB
 
 // Enqueuer is the dispatcher surface the server needs.
 type Enqueuer interface {
