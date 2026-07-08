@@ -40,10 +40,20 @@ var version = "dev" // set via -ldflags "-X main.version=..."
 func main() {
 	configPath := flag.String("config", "/etc/renovate-server/config.yaml", "path to config file")
 	showVersion := flag.Bool("version", false, "print version and exit")
+	validate := flag.Bool("validate", false, "validate the config file and exit (0 = valid)")
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Println("renovate-server", version)
+		return
+	}
+
+	if *validate {
+		if _, err := config.Load(*configPath); err != nil {
+			fmt.Fprintln(os.Stderr, "configuration invalid:", err)
+			os.Exit(1)
+		}
+		fmt.Println("configuration valid")
 		return
 	}
 
