@@ -12,6 +12,7 @@ const (
 	ExecutorGitLabPipeline = "gitlabPipeline"
 	ExecutorKubernetes     = "kubernetes"
 	ExecutorDocker         = "docker"
+	ExecutorNoop           = "noop"
 )
 
 // Config is the root of the configuration file.

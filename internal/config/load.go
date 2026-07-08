@@ -208,6 +208,8 @@ func (c *Config) validate() error {
 			if e.Image == "" {
 				return fmt.Errorf("executor %q: image is required", e.Name)
 			}
+		case ExecutorNoop:
+			// shadow mode: no configuration beyond the name
 		default:
 			return fmt.Errorf("executor %q: executor type %q is not supported", e.Name, e.Type)
 		}

@@ -24,6 +24,7 @@ import (
 	dockerexec "github.com/BlackDark/renovate-server/internal/executor/docker"
 	"github.com/BlackDark/renovate-server/internal/executor/gitlabci"
 	kubeexec "github.com/BlackDark/renovate-server/internal/executor/kubernetes"
+	"github.com/BlackDark/renovate-server/internal/executor/noop"
 	"github.com/BlackDark/renovate-server/internal/history"
 	"github.com/BlackDark/renovate-server/internal/metrics"
 	"github.com/BlackDark/renovate-server/internal/platform"
@@ -115,6 +116,8 @@ func run(configPath string) error {
 				return fmt.Errorf("executor %q: %w", ec.Name, err)
 			}
 			executors[ec.Name] = dockerexec.New(ec, api, log)
+		case config.ExecutorNoop:
+			executors[ec.Name] = noop.New(ec, log)
 		}
 	}
 
