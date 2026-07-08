@@ -73,6 +73,7 @@ a complete annotated example.
 | `maxConcurrentRuns` | `4` | Global cap on parallel runs |
 | `runTimeout` | `60m` | Per-run timeout; the repo lock is force-released after it |
 | `historySize` | `100` | Finished runs kept for `/api/v1/runs` |
+| `apiToken` | — | Bearer token enabling `POST /api/v1/trigger` (unset = endpoint disabled) |
 | `store.type` | `memory` | `memory` or `redis` |
 | `store.redis.url` | — | `redis://[:pass@]host:port/db`, required for redis |
 | `store.redis.keyPrefix` | `renovate-server:` | Key namespace |
@@ -161,6 +162,7 @@ required.
 | `GET /metrics` | Prometheus metrics |
 | `GET /api/v1/status` | Queued/running repos as JSON |
 | `GET /api/v1/runs` | Recent finished runs (result, duration, error) as JSON |
+| `POST /api/v1/trigger` | Manually enqueue a run: `{"platform": "...", "repo": "..."}`; requires `server.apiToken` as bearer token (404 when unset) |
 
 Metrics: `renovate_server_webhook_events_total{platform,outcome}`,
 `renovate_server_runs_started_total{executor}`,

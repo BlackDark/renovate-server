@@ -80,6 +80,11 @@ func (g *GitLab) Schedule() config.Schedule { return g.schedule }
 // Client exposes the authenticated API client for the gitlabci executor.
 func (g *GitLab) Client() *gogitlab.Client { return g.client }
 
+// AllowsRepo reports whether the repo is inside the configured groups.
+func (g *GitLab) AllowsRepo(fullName string) bool {
+	return platform.RepoAllowed(g.groups, fullName)
+}
+
 // ParseWebhook checks the X-Gitlab-Token and maps supported events (MR or
 // issue description edits with newly checked boxes, default-branch push)
 // to a run request; unsupported or irrelevant events return (nil, nil).

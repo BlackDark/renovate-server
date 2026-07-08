@@ -47,6 +47,7 @@ const (
 	ReasonPush         Reason = "push"
 	ReasonCron         Reason = "cron"
 	ReasonRerun        Reason = "rerun"
+	ReasonManual       Reason = "manual"
 )
 
 // Event is a normalized trigger extracted from a webhook or schedule.
@@ -70,4 +71,7 @@ type Platform interface {
 	DiscoverRepos(ctx context.Context) ([]Repo, error)
 	// Schedule returns the cron schedule config for this platform.
 	Schedule() config.Schedule
+	// AllowsRepo reports whether the repo is inside the platform's
+	// configured groups/orgs (empty configuration allows all).
+	AllowsRepo(fullName string) bool
 }
