@@ -9,6 +9,13 @@ server:
   debounce: 10s
   maxConcurrentRuns: 4
   runTimeout: 60m
+  historySize: 100          # finished runs kept for /api/v1/runs
+  # Optional: persist run state in redis so queued runs survive restarts.
+  # store:
+  #   type: redis
+  #   redis:
+  #     url: ${REDIS_STORE_URL}
+  #     ttl: 2h
 
 platforms:
   - name: company-gitlab
@@ -16,6 +23,8 @@ platforms:
     baseURL: https://gitlab.company.io
     token: ${GITLAB_TOKEN}
     botEmail: renovate-bot@company.io
+    # dashboardIssueTitle: Dependency Dashboard  # "*" disables the title filter
+    # allowAnyCheckbox: false  # true = trigger on any checked todo item (pre-v0.2 behavior)
     webhook:
       path: /webhook/gitlab
       secret: ${GITLAB_WEBHOOK_SECRET}

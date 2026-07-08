@@ -9,9 +9,13 @@ guarantees a repository never has more than one run in flight.
 
 - **GitLab group webhooks** (one webhook on your top group covers all subgroups
   and projects) and **GitHub org webhooks**
-  - MR/PR description edits where a Renovate checkbox got ticked (rebase/retry)
-  - Dependency-dashboard issue checkbox ticks
+  - MR/PR description edits where a Renovate checkbox got ticked (rebase/retry).
+    Only checkboxes carrying Renovate's HTML markers count, so ordinary task
+    lists in human MRs never trigger runs (`allowAnyCheckbox` reverts this)
+  - Dependency-dashboard issue checkbox ticks (filtered by issue title)
   - Optional: pushes to the default branch (excluding Renovate's own commits)
+  - Repos outside the configured `discovery.groups` are rejected, so a stray
+    webhook cannot trigger runs for foreign projects
 - **Cron discovery**: periodically list all projects under the configured
   groups/orgs and run each through the same pipeline as webhook events
 - **Three executors**, routed per repo by glob rules:
@@ -25,7 +29,12 @@ guarantees a repository never has more than one run in flight.
 - **Global concurrency cap** and **run timeout** (a stuck run cannot hold a
   repo lock forever)
 - **Observability**: Prometheus `/metrics`, `/healthz`, `/readyz`,
-  read-only `/api/v1/status`
+  read-only `/api/v1/status` and `/api/v1/runs` (recent run history)
+- **Optional Redis store**: run state survives restarts (queued repos are
+  re-enqueued at startup); memory store by default
+- **SIGHUP reload** for routing rules and log level
+- **Signed releases**: keyless cosign signatures + SBOMs for images and
+  binaries, Helm chart published as OCI artifact
 
 ## Quick start (Docker)
 
@@ -58,6 +67,11 @@ a complete annotated example.
 | `debounce` | `10s` | Window in which events for the same repo merge into one run |
 | `maxConcurrentRuns` | `4` | Global cap on parallel runs |
 | `runTimeout` | `60m` | Per-run timeout; the repo lock is force-released after it |
+| `historySize` | `100` | Finished runs kept for `/api/v1/runs` |
+| `store.type` | `memory` | `memory` or `redis` |
+| `store.redis.url` | — | `redis://[:pass@]host:port/db`, required for redis |
+| `store.redis.keyPrefix` | `renovate-server:` | Key namespace |
+| `store.redis.ttl` | `2h` | Entry TTL; stale locks self-heal after it |
 
 ### `platforms[]`
 
@@ -68,10 +82,12 @@ a complete annotated example.
 | `baseURL` | gitlab: yes | Instance URL (GitHub: empty for github.com, URL for GHE) |
 | `token` | yes | API token used for repo discovery |
 | `botEmail` | no | Push events authored by this email are ignored |
+| `dashboardIssueTitle` | no | Issue events must match this title (default `Dependency Dashboard`, `*` = any) |
+| `allowAnyCheckbox` | no | Trigger on any checked todo item instead of Renovate-marked ones; also skips the title filter |
 | `webhook.path` | yes | HTTP path the webhook is served on |
 | `webhook.secret` | yes | GitLab: `X-Gitlab-Token`; GitHub: HMAC secret |
 | `events` | no | Subset of `merge_request`, `issue`, `push` |
-| `discovery.groups` | for cron | Top groups (GitLab, incl. subgroups) or orgs (GitHub) |
+| `discovery.groups` | for cron | Top groups (GitLab, incl. subgroups) or orgs (GitHub); also the webhook allowlist — events for repos outside are ignored (empty = allow all) |
 | `discovery.excludeArchived` | no | Skip archived repos during discovery |
 | `schedule.crontabs` | no | Standard cron expressions for periodic full runs |
 | `schedule.timezone` | no | IANA timezone for the crontabs (default UTC) |
@@ -129,6 +145,7 @@ required.
 | `GET /readyz` | Readiness (200 after startup) |
 | `GET /metrics` | Prometheus metrics |
 | `GET /api/v1/status` | Queued/running repos as JSON |
+| `GET /api/v1/runs` | Recent finished runs (result, duration, error) as JSON |
 
 Metrics: `renovate_server_webhook_events_total{platform,outcome}`,
 `renovate_server_runs_started_total{executor}`,
@@ -136,10 +153,38 @@ Metrics: `renovate_server_webhook_events_total{platform,outcome}`,
 `renovate_server_run_duration_seconds{executor}`,
 `renovate_server_repos_active`.
 
-Restart semantics: state is in-memory (single replica). Running Kubernetes
-Jobs are re-adopted on startup via labels; pipeline/docker run tracking is
-lost on restart — the run timeout and the next cron run heal stuck state.
-Failed runs are not auto-retried; the next event or cron run is the retry.
+Restart semantics: with the default memory store, queued runs are lost on
+restart. Running Kubernetes Jobs are re-adopted on startup via labels;
+pipeline/docker run tracking is lost — the run timeout and the next cron run
+heal stuck state. With the Redis store, queued repos are re-enqueued at
+startup and stale entries expire after `store.redis.ttl`. Failed runs are not
+auto-retried; the next event or cron run is the retry. Keep `replicaCount: 1`
+either way — coordination between replicas is not implemented.
+
+Config reload: `kill -HUP <pid>` reloads `rules` and `log.level` from the
+config file. Changes to `platforms`, `executors` or the listen address are
+refused and require a restart.
+
+Failed docker-executor runs log the container's last 50 log lines before the
+container is removed.
+
+## Supply chain
+
+Images are signed with cosign (keyless) and ship buildx SBOM/provenance
+attestations; release archives include SPDX SBOMs. Verify an image with:
+
+```sh
+cosign verify \
+  --certificate-identity-regexp 'github.com/BlackDark/renovate-server' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/blackdark/renovate-server:<version>
+```
+
+Install the Helm chart straight from ghcr:
+
+```sh
+helm install renovate-server oci://ghcr.io/blackdark/charts/renovate-server --version <version>
+```
 
 ## Development
 
