@@ -48,4 +48,13 @@ type Store interface {
 	// re-adopting in-flight runs after a restart.
 	Adopt(key, reason string)
 	Snapshot() map[string]RepoStatus
+
+	// SaveRunHandle persists executor-specific state (e.g. a pipeline id)
+	// for an active run so it can be re-adopted after a restart. One handle
+	// per repo key; saving overwrites.
+	SaveRunHandle(key, data string)
+	// LoadRunHandles returns all persisted handles (repo key -> data).
+	LoadRunHandles() map[string]string
+	// DeleteRunHandle removes a run's handle; missing keys are a no-op.
+	DeleteRunHandle(key string)
 }

@@ -39,6 +39,20 @@ func TestRedisTTLSet(t *testing.T) {
 	}
 }
 
+func TestRedisHandleTTLSet(t *testing.T) {
+	mr := miniredis.RunT(t)
+	s, err := NewRedis(t.Context(), config.RedisConfig{
+		URL: "redis://" + mr.Addr(), KeyPrefix: "test:", TTL: time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SaveRunHandle("gl:a", "data")
+	if ttl := mr.TTL("test:handle:gl:a"); ttl <= 0 || ttl > time.Hour {
+		t.Fatalf("handle ttl = %v, want (0, 1h]", ttl)
+	}
+}
+
 func TestRedisConnectFailure(t *testing.T) {
 	_, err := NewRedis(t.Context(), config.RedisConfig{
 		URL: "redis://127.0.0.1:1", KeyPrefix: "test:", TTL: time.Hour,

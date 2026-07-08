@@ -70,6 +70,26 @@ func testStoreSemantics(t *testing.T, s Store) {
 		s.FinishRun("gl:ad")
 	})
 
+	t.Run("run handles", func(t *testing.T) {
+		if got := s.LoadRunHandles(); len(got) != 0 {
+			t.Fatalf("handles must start empty, got %v", got)
+		}
+		s.SaveRunHandle("gl:h/a", `{"pipelineID":1}`)
+		s.SaveRunHandle("gl:h/b", `{"pipelineID":2}`)
+		s.SaveRunHandle("gl:h/a", `{"pipelineID":3}`) // overwrite
+		got := s.LoadRunHandles()
+		if len(got) != 2 || got["gl:h/a"] != `{"pipelineID":3}` || got["gl:h/b"] != `{"pipelineID":2}` {
+			t.Fatalf("handles = %v", got)
+		}
+		s.DeleteRunHandle("gl:h/a")
+		s.DeleteRunHandle("gl:h/missing") // no-op
+		got = s.LoadRunHandles()
+		if len(got) != 1 || got["gl:h/b"] == "" {
+			t.Fatalf("after delete: %v", got)
+		}
+		s.DeleteRunHandle("gl:h/b")
+	})
+
 	t.Run("concurrent access", func(t *testing.T) {
 		var wg sync.WaitGroup
 		for range 50 {

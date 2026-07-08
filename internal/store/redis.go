@@ -139,6 +139,43 @@ func (r *redisStore) Adopt(repoKey, reason string) {
 	}
 }
 
+func (r *redisStore) handleKey(repoKey string) string { return r.prefix + "handle:" + repoKey }
+
+func (r *redisStore) SaveRunHandle(key, data string) {
+	ctx, cancel := r.ctx()
+	defer cancel()
+	if err := r.client.Set(ctx, r.handleKey(key), data, r.ttl).Err(); err != nil {
+		slog.Error("redis save-handle operation failed", "repo", key, "error", err)
+	}
+}
+
+func (r *redisStore) LoadRunHandles() map[string]string {
+	ctx, cancel := r.ctx()
+	defer cancel()
+	out := map[string]string{}
+	iter := r.client.Scan(ctx, 0, r.prefix+"handle:*", 100).Iterator()
+	for iter.Next(ctx) {
+		key := iter.Val()
+		data, err := r.client.Get(ctx, key).Result()
+		if err != nil {
+			continue
+		}
+		out[strings.TrimPrefix(key, r.prefix+"handle:")] = data
+	}
+	if err := iter.Err(); err != nil {
+		slog.Error("redis handle scan failed", "error", err)
+	}
+	return out
+}
+
+func (r *redisStore) DeleteRunHandle(key string) {
+	ctx, cancel := r.ctx()
+	defer cancel()
+	if err := r.client.Del(ctx, r.handleKey(key)).Err(); err != nil {
+		slog.Error("redis delete-handle operation failed", "repo", key, "error", err)
+	}
+}
+
 func (r *redisStore) Snapshot() map[string]RepoStatus {
 	ctx, cancel := r.ctx()
 	defer cancel()

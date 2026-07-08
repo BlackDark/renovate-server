@@ -90,6 +90,17 @@ func run(configPath string) error {
 		}
 	}
 
+	// Store (before executors: gitlabci persists run handles in it).
+	var st store.Store
+	if cfg.Server.Store.Type == "redis" {
+		st, err = store.NewRedis(ctx, cfg.Server.Store.Redis)
+		if err != nil {
+			return fmt.Errorf("redis store: %w", err)
+		}
+	} else {
+		st = store.NewMemory()
+	}
+
 	// Executors.
 	executors := map[string]executor.Executor{}
 	for _, ec := range cfg.Executors {
@@ -99,7 +110,7 @@ func run(configPath string) error {
 			if !ok {
 				return fmt.Errorf("executor %q: platform %q is not a configured gitlab platform", ec.Name, ec.Platform)
 			}
-			ex, err := gitlabci.New(ec, gl.Client(), log)
+			ex, err := gitlabci.New(ec, gl.Client(), st, log)
 			if err != nil {
 				return err
 			}
@@ -122,15 +133,6 @@ func run(configPath string) error {
 	}
 
 	// Core.
-	var st store.Store
-	if cfg.Server.Store.Type == "redis" {
-		st, err = store.NewRedis(ctx, cfg.Server.Store.Redis)
-		if err != nil {
-			return fmt.Errorf("redis store: %w", err)
-		}
-	} else {
-		st = store.NewMemory()
-	}
 	reg := prometheus.NewRegistry()
 	m := metrics.New(reg, st)
 	hist := history.New(cfg.Server.HistorySize)

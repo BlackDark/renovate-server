@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -69,13 +70,59 @@ func newPipelineServer(t *testing.T, finalStatus string, pollsUntilFinal int32) 
 	return ps
 }
 
+type fakeHandles struct {
+	mu      sync.Mutex
+	saved   map[string]string
+	deleted []string
+}
+
+func newFakeHandles() *fakeHandles {
+	return &fakeHandles{saved: map[string]string{}}
+}
+
+func (f *fakeHandles) SaveRunHandle(key, data string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.saved[key] = data
+}
+
+func (f *fakeHandles) LoadRunHandles() map[string]string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := map[string]string{}
+	for k, v := range f.saved {
+		out[k] = v
+	}
+	return out
+}
+
+func (f *fakeHandles) DeleteRunHandle(key string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.saved, key)
+	f.deleted = append(f.deleted, key)
+}
+
 func newExecutor(t *testing.T, baseURL string) *Executor {
+	return newExecutorWithHandles(t, baseURL, nil)
+}
+
+func newExecutorWithHandles(t *testing.T, baseURL string, handles HandleStore) *Executor {
 	t.Helper()
 	client, err := gogitlab.NewClient("tok", gogitlab.WithBaseURL(baseURL))
 	if err != nil {
 		t.Fatal(err)
 	}
-	e, err := New(config.Executor{
+	e, err := newFromClient(t, client, handles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return e
+}
+
+func newFromClient(t *testing.T, client *gogitlab.Client, handles HandleStore) (*Executor, error) {
+	t.Helper()
+	return New(config.Executor{
 		Name:         "ci",
 		Type:         config.ExecutorGitLabPipeline,
 		Project:      "infra/renovate-runner",
@@ -87,11 +134,7 @@ func newExecutor(t *testing.T, baseURL string) *Executor {
 			"STATIC_VAR":     "fixed",
 		},
 		PollInterval: 5 * time.Millisecond,
-	}, client, slog.New(slog.DiscardHandler))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return e
+	}, client, handles, slog.New(slog.DiscardHandler))
 }
 
 func spec() executor.RunSpec {
@@ -153,8 +196,91 @@ func TestInvalidTemplateRejectedAtConstruction(t *testing.T) {
 		Name: "ci", Project: "p", TriggerToken: "t", Ref: "main",
 		Variables:    map[string]string{"BAD": "{{ .Nope"},
 		PollInterval: time.Second,
-	}, client, slog.New(slog.DiscardHandler))
+	}, client, nil, slog.New(slog.DiscardHandler))
 	if err == nil {
 		t.Fatal("want template parse error at construction")
+	}
+}
+
+func TestRunPersistsAndClearsHandle(t *testing.T) {
+	srv := newPipelineServer(t, "success", 2)
+	handles := newFakeHandles()
+	var sawHandle atomic.Bool
+	e := newExecutorWithHandles(t, srv.URL, handles)
+
+	// capture handle state while the run is in flight
+	go func() {
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			if len(handles.LoadRunHandles()) == 1 {
+				sawHandle.Store(true)
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}()
+
+	if err := e.Run(t.Context(), spec()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !sawHandle.Load() {
+		t.Error("handle was never persisted during the run")
+	}
+	if got := handles.LoadRunHandles(); len(got) != 0 {
+		t.Fatalf("handle not cleared after run: %v", got)
+	}
+	if len(handles.deleted) == 0 || handles.deleted[0] != "gl:top-group/app" {
+		t.Fatalf("deleted = %v", handles.deleted)
+	}
+}
+
+func TestAdoptRunningResumesPipeline(t *testing.T) {
+	srv := newPipelineServer(t, "success", 2)
+	handles := newFakeHandles()
+	handles.SaveRunHandle("gl:top-group/app", `{"executor":"ci","platform":"gl","repo":"top-group/app","project":"infra/renovate-runner","pipelineID":42}`)
+	e := newExecutorWithHandles(t, srv.URL, handles)
+
+	adopted, err := e.AdoptRunning(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(adopted) != 1 {
+		t.Fatalf("adopted = %d, want 1", len(adopted))
+	}
+	if adopted[0].Repo != (platform.Repo{Platform: "gl", FullName: "top-group/app"}) {
+		t.Fatalf("adopted repo = %+v", adopted[0].Repo)
+	}
+	if err := adopted[0].Wait(t.Context()); err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if srv.triggered.Load() != 0 {
+		t.Fatal("adoption must not trigger a new pipeline")
+	}
+	if got := handles.LoadRunHandles(); len(got) != 0 {
+		t.Fatalf("handle not cleared after adopted run: %v", got)
+	}
+}
+
+func TestAdoptRunningIgnoresForeignAndCorruptHandles(t *testing.T) {
+	srv := newPipelineServer(t, "success", 1)
+	handles := newFakeHandles()
+	handles.SaveRunHandle("gl:other/app", `{"executor":"other-executor","platform":"gl","repo":"other/app","project":"p","pipelineID":7}`)
+	handles.SaveRunHandle("gl:broken/app", `{not json`)
+	e := newExecutorWithHandles(t, srv.URL, handles)
+
+	adopted, err := e.AdoptRunning(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(adopted) != 0 {
+		t.Fatalf("adopted = %d, want 0", len(adopted))
+	}
+	// foreign handle untouched, corrupt handle cleaned up
+	got := handles.LoadRunHandles()
+	if _, ok := got["gl:other/app"]; !ok {
+		t.Error("foreign handle must be preserved")
+	}
+	if _, ok := got["gl:broken/app"]; ok {
+		t.Error("corrupt handle must be deleted")
 	}
 }

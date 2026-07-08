@@ -13,14 +13,18 @@ type repoState struct {
 }
 
 type memory struct {
-	mu    sync.Mutex
-	repos map[string]*repoState
+	mu      sync.Mutex
+	repos   map[string]*repoState
+	handles map[string]string
 }
 
 // NewMemory returns an in-memory Store. State is lost on restart; the run
 // timeout and cron schedules heal any resulting stuck state.
 func NewMemory() Store {
-	return &memory{repos: make(map[string]*repoState)}
+	return &memory{
+		repos:   make(map[string]*repoState),
+		handles: make(map[string]string),
+	}
 }
 
 func (m *memory) Queue(key, reason string) QueueResult {
@@ -65,6 +69,28 @@ func (m *memory) Adopt(key, reason string) {
 	if _, ok := m.repos[key]; !ok {
 		m.repos[key] = &repoState{state: StateRunning, reason: reason, since: time.Now()}
 	}
+}
+
+func (m *memory) SaveRunHandle(key, data string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.handles[key] = data
+}
+
+func (m *memory) LoadRunHandles() map[string]string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make(map[string]string, len(m.handles))
+	for k, v := range m.handles {
+		out[k] = v
+	}
+	return out
+}
+
+func (m *memory) DeleteRunHandle(key string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.handles, key)
 }
 
 func (m *memory) Snapshot() map[string]RepoStatus {
