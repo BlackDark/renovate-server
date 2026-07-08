@@ -6,9 +6,27 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/BlackDark/renovate-server/internal/config"
 )
+
+// RepoAllowed reports whether a repo full name is inside one of the
+// configured groups/orgs (path-prefix match, case-insensitive). With no
+// groups configured, all repos are allowed.
+func RepoAllowed(groups []string, fullName string) bool {
+	if len(groups) == 0 {
+		return true
+	}
+	name := strings.ToLower(fullName)
+	for _, g := range groups {
+		g = strings.ToLower(g)
+		if name == g || strings.HasPrefix(name, g+"/") {
+			return true
+		}
+	}
+	return false
+}
 
 // Repo identifies a repository on a configured platform.
 type Repo struct {

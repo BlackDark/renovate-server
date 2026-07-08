@@ -144,6 +144,10 @@ func (g *GitHub) ticked(previous, current string) bool {
 }
 
 func (g *GitHub) event(fullName string, reason platform.Reason) *platform.Event {
+	if !platform.RepoAllowed(g.orgs, fullName) {
+		g.log.Warn("webhook for repo outside configured orgs ignored", "repo", fullName)
+		return nil
+	}
 	return &platform.Event{
 		Repo:   platform.Repo{Platform: g.name, FullName: fullName},
 		Reason: reason,

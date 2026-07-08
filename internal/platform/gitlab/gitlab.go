@@ -138,6 +138,10 @@ func (g *GitLab) ticked(previous, current string) bool {
 }
 
 func (g *GitLab) event(fullName string, reason platform.Reason) *platform.Event {
+	if !platform.RepoAllowed(g.groups, fullName) {
+		g.log.Warn("webhook for repo outside configured groups ignored", "repo", fullName)
+		return nil
+	}
 	return &platform.Event{
 		Repo:   platform.Repo{Platform: g.name, FullName: fullName},
 		Reason: reason,

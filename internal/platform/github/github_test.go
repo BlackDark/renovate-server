@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/BlackDark/renovate-server/internal/config"
@@ -184,6 +185,16 @@ func TestParseWebhookDashboardTitleWildcard(t *testing.T) {
 	got, err := g.ParseWebhook(r, []byte(issueTickedWrongTitle))
 	if err != nil || got == nil {
 		t.Fatalf("wildcard title should allow any issue, got %+v, %v", got, err)
+	}
+}
+
+func TestParseWebhookRejectsRepoOutsideOrgs(t *testing.T) {
+	g := newTestPlatform(t, "") // orgs: [my-org]
+	body := strings.ReplaceAll(prTicked, "my-org/app", "other-org/app")
+	r := webhookRequest("pull_request", "s3cret", body)
+	got, err := g.ParseWebhook(r, []byte(body))
+	if err != nil || got != nil {
+		t.Fatalf("repo outside orgs must be ignored, got %+v, %v", got, err)
 	}
 }
 

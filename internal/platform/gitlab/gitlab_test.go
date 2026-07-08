@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/BlackDark/renovate-server/internal/config"
@@ -197,6 +198,41 @@ func TestParseWebhookDashboardTitleWildcard(t *testing.T) {
 	got, err := g.ParseWebhook(r, []byte(issueTickedWrongTitle))
 	if err != nil || got == nil {
 		t.Fatalf("wildcard title should allow any issue, got %+v, %v", got, err)
+	}
+}
+
+func TestParseWebhookRejectsRepoOutsideGroups(t *testing.T) {
+	g := newTestPlatform(t, "https://gitlab.example.com") // groups: [top-group]
+	body := strings.ReplaceAll(mrTicked, "top-group/app", "other-group/app")
+	r := webhookRequest("Merge Request Hook", "s3cret", body)
+	got, err := g.ParseWebhook(r, []byte(body))
+	if err != nil || got != nil {
+		t.Fatalf("repo outside groups must be ignored, got %+v, %v", got, err)
+	}
+}
+
+func TestParseWebhookAllowsSubgroupRepo(t *testing.T) {
+	g := newTestPlatform(t, "https://gitlab.example.com")
+	body := strings.ReplaceAll(mrTicked, "top-group/app", "top-group/sub/deep/app")
+	r := webhookRequest("Merge Request Hook", "s3cret", body)
+	got, err := g.ParseWebhook(r, []byte(body))
+	if err != nil || got == nil {
+		t.Fatalf("subgroup repo must be allowed, got %+v, %v", got, err)
+	}
+}
+
+func TestParseWebhookNoGroupsAllowsAll(t *testing.T) {
+	cfg := testConfig("https://gitlab.example.com")
+	cfg.Discovery.Groups = nil
+	g, err := New(cfg, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := strings.ReplaceAll(mrTicked, "top-group/app", "anything/app")
+	r := webhookRequest("Merge Request Hook", "s3cret", body)
+	got, err := g.ParseWebhook(r, []byte(body))
+	if err != nil || got == nil {
+		t.Fatalf("empty groups must allow all repos, got %+v, %v", got, err)
 	}
 }
 
