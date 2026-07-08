@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/BlackDark/renovate-server/internal/executor"
+	"github.com/BlackDark/renovate-server/internal/history"
 	"github.com/BlackDark/renovate-server/internal/platform"
 	"github.com/BlackDark/renovate-server/internal/store"
 )
@@ -26,6 +27,16 @@ type noopMetrics struct{}
 func (noopMetrics) RunStarted(string)                   {}
 func (noopMetrics) RunFinished(string, string, float64) {}
 
+// Recorder receives an entry for every finished run. Implemented by the
+// history package; nil-safe via the noop default.
+type Recorder interface {
+	Record(e history.Entry)
+}
+
+type noopRecorder struct{}
+
+func (noopRecorder) Record(history.Entry) {}
+
 // Options configures a Dispatcher.
 type Options struct {
 	Debounce      time.Duration
@@ -33,6 +44,7 @@ type Options struct {
 	MaxConcurrent int
 	Log           *slog.Logger
 	Metrics       Metrics
+	History       Recorder
 }
 
 // Dispatcher owns the per-repo run lifecycle: debounce, mutual exclusion,
@@ -54,6 +66,9 @@ func NewDispatcher(st store.Store, router *Router, opts Options) *Dispatcher {
 	}
 	if opts.Metrics == nil {
 		opts.Metrics = noopMetrics{}
+	}
+	if opts.History == nil {
+		opts.History = noopRecorder{}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Dispatcher{
@@ -100,8 +115,9 @@ func (d *Dispatcher) Adopt(run executor.AdoptedRun, executorName string) {
 		defer d.wg.Done()
 		ctx, cancel := context.WithTimeout(d.baseCtx, d.opts.RunTimeout)
 		defer cancel()
+		start := time.Now()
 		err := run.Wait(ctx)
-		d.finish(run.Repo, executorName, time.Now(), err)
+		d.finish(run.Repo, "adopted", executorName, start, err)
 	}()
 }
 
@@ -130,10 +146,10 @@ func (d *Dispatcher) run(ev platform.Event, exec executor.Executor) {
 	ctx, cancel := context.WithTimeout(d.baseCtx, d.opts.RunTimeout)
 	defer cancel()
 	err := exec.Run(ctx, executor.RunSpec{Repo: ev.Repo, Reason: ev.Reason})
-	d.finish(ev.Repo, exec.Name(), start, err)
+	d.finish(ev.Repo, string(ev.Reason), exec.Name(), start, err)
 }
 
-func (d *Dispatcher) finish(repo platform.Repo, executorName string, start time.Time, err error) {
+func (d *Dispatcher) finish(repo platform.Repo, reason, executorName string, start time.Time, err error) {
 	log := d.opts.Log.With("repo", repo.Key(), "executor", executorName)
 	result := "success"
 	switch {
@@ -147,6 +163,19 @@ func (d *Dispatcher) finish(repo platform.Repo, executorName string, start time.
 		log.Error("run failed", "error", err)
 	}
 	d.opts.Metrics.RunFinished(executorName, result, time.Since(start).Seconds())
+
+	errMsg := ""
+	if err != nil {
+		errMsg = err.Error()
+		if len(errMsg) > 500 {
+			errMsg = errMsg[:500]
+		}
+	}
+	d.opts.History.Record(history.Entry{
+		Repo: repo.Key(), Reason: reason, Executor: executorName,
+		Result: result, Error: errMsg, Start: start,
+		Duration: time.Since(start).Round(time.Millisecond).String(),
+	})
 
 	if rerun := d.store.FinishRun(repo.Key()); rerun {
 		log.Info("deferred rerun triggered")

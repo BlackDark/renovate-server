@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/BlackDark/renovate-server/internal/history"
 	"github.com/BlackDark/renovate-server/internal/metrics"
 	"github.com/BlackDark/renovate-server/internal/platform"
 	"github.com/BlackDark/renovate-server/internal/store"
@@ -33,9 +34,9 @@ type Server struct {
 }
 
 // New builds the HTTP surface: one webhook route per platform plus
-// healthz, readyz, metrics and the status API.
+// healthz, readyz, metrics, run history and the status API.
 func New(platforms []platform.Platform, enq Enqueuer, st store.Store,
-	reg *prometheus.Registry, m *metrics.Metrics, log *slog.Logger) *Server {
+	hist *history.History, reg *prometheus.Registry, m *metrics.Metrics, log *slog.Logger) *Server {
 	s := &Server{mux: http.NewServeMux(), log: log}
 
 	for _, p := range platforms {
@@ -56,6 +57,10 @@ func New(platforms []platform.Platform, enq Enqueuer, st store.Store,
 	s.mux.HandleFunc("GET /api/v1/status", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"repos": st.Snapshot()})
+	})
+	s.mux.HandleFunc("GET /api/v1/runs", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"runs": hist.Entries()})
 	})
 	return s
 }

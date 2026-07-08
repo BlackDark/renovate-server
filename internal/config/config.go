@@ -29,6 +29,8 @@ type Server struct {
 	Debounce          time.Duration `yaml:"debounce"`
 	MaxConcurrentRuns int           `yaml:"maxConcurrentRuns"`
 	RunTimeout        time.Duration `yaml:"runTimeout"`
+	// HistorySize is the number of finished runs kept for /api/v1/runs.
+	HistorySize int `yaml:"historySize"`
 }
 
 // Log configures slog output.

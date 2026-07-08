@@ -10,6 +10,7 @@ import (
 
 	"github.com/BlackDark/renovate-server/internal/config"
 	"github.com/BlackDark/renovate-server/internal/executor"
+	"github.com/BlackDark/renovate-server/internal/history"
 	"github.com/BlackDark/renovate-server/internal/platform"
 	"github.com/BlackDark/renovate-server/internal/store"
 )
@@ -206,6 +207,58 @@ func TestAdoptedRunBlocksNewRunsUntilDone(t *testing.T) {
 	close(exec.release)
 	waitFor(t, func() bool { return exec.runCount() == 1 }, "deferred run after adoption finished")
 	shutdown(t, d)
+}
+
+type fakeRecorder struct {
+	mu      sync.Mutex
+	entries []history.Entry
+}
+
+func (f *fakeRecorder) Record(e history.Entry) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.entries = append(f.entries, e)
+}
+
+func (f *fakeRecorder) all() []history.Entry {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]history.Entry(nil), f.entries...)
+}
+
+func TestHistoryRecordsRuns(t *testing.T) {
+	exec := newBlockingExecutor()
+	close(exec.release)
+	rec := &fakeRecorder{}
+	d := testDispatcher(t, exec, Options{History: rec})
+	d.Enqueue(event("g/a"))
+	waitFor(t, func() bool { return len(rec.all()) == 1 }, "entry recorded")
+	shutdown(t, d)
+
+	e := rec.all()[0]
+	if e.Repo != "gl:g/a" || e.Reason != "push" || e.Executor != "fake" || e.Result != "success" {
+		t.Fatalf("entry = %+v", e)
+	}
+	if e.Start.IsZero() || e.Duration == "" {
+		t.Fatalf("timing missing: %+v", e)
+	}
+	if e.Error != "" {
+		t.Fatalf("no error expected: %+v", e)
+	}
+}
+
+func TestHistoryRecordsTimeout(t *testing.T) {
+	exec := newBlockingExecutor() // never released
+	rec := &fakeRecorder{}
+	d := testDispatcher(t, exec, Options{History: rec, RunTimeout: 20 * time.Millisecond})
+	d.Enqueue(event("g/a"))
+	waitFor(t, func() bool { return len(rec.all()) == 1 }, "entry recorded")
+	shutdown(t, d)
+
+	e := rec.all()[0]
+	if e.Result != "timeout" || e.Error == "" {
+		t.Fatalf("entry = %+v", e)
+	}
 }
 
 func shutdown(t *testing.T, d *Dispatcher) {

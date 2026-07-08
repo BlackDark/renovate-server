@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/BlackDark/renovate-server/internal/config"
+	"github.com/BlackDark/renovate-server/internal/history"
 	"github.com/BlackDark/renovate-server/internal/metrics"
 	"github.com/BlackDark/renovate-server/internal/platform"
 	"github.com/BlackDark/renovate-server/internal/store"
@@ -48,13 +49,38 @@ func (f *fakeEnqueuer) Enqueue(ev platform.Event) {
 }
 
 func testServer(t *testing.T, p platform.Platform) (*Server, *fakeEnqueuer, store.Store) {
+	s, enq, st, _ := testServerWithHistory(t, p)
+	return s, enq, st
+}
+
+func testServerWithHistory(t *testing.T, p platform.Platform) (*Server, *fakeEnqueuer, store.Store, *history.History) {
 	t.Helper()
 	st := store.NewMemory()
 	reg := prometheus.NewRegistry()
 	m := metrics.New(reg, st)
 	enq := &fakeEnqueuer{}
-	s := New([]platform.Platform{p}, enq, st, reg, m, slog.New(slog.DiscardHandler))
-	return s, enq, st
+	hist := history.New(10)
+	s := New([]platform.Platform{p}, enq, st, hist, reg, m, slog.New(slog.DiscardHandler))
+	return s, enq, st, hist
+}
+
+func TestRunsEndpoint(t *testing.T) {
+	s, _, _, hist := testServerWithHistory(t, &fakePlatform{name: "gl", path: "/webhook/gitlab"})
+	hist.Record(history.Entry{Repo: "gl:g/a", Result: "success", Reason: "push", Executor: "ci"})
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/v1/runs", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("runs = %d", rec.Code)
+	}
+	var body struct {
+		Runs []history.Entry `json:"runs"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Runs) != 1 || body.Runs[0].Repo != "gl:g/a" || body.Runs[0].Result != "success" {
+		t.Fatalf("body = %s", rec.Body.String())
+	}
 }
 
 func TestWebhookAccepted(t *testing.T) {

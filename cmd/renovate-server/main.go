@@ -22,6 +22,7 @@ import (
 	dockerexec "github.com/BlackDark/renovate-server/internal/executor/docker"
 	"github.com/BlackDark/renovate-server/internal/executor/gitlabci"
 	kubeexec "github.com/BlackDark/renovate-server/internal/executor/kubernetes"
+	"github.com/BlackDark/renovate-server/internal/history"
 	"github.com/BlackDark/renovate-server/internal/metrics"
 	"github.com/BlackDark/renovate-server/internal/platform"
 	githubplatform "github.com/BlackDark/renovate-server/internal/platform/github"
@@ -119,6 +120,7 @@ func run(configPath string) error {
 	st := store.NewMemory()
 	reg := prometheus.NewRegistry()
 	m := metrics.New(reg, st)
+	hist := history.New(cfg.Server.HistorySize)
 	router, err := dispatch.NewRouter(cfg.Rules, executors)
 	if err != nil {
 		return err
@@ -129,6 +131,7 @@ func run(configPath string) error {
 		MaxConcurrent: cfg.Server.MaxConcurrentRuns,
 		Log:           log,
 		Metrics:       m,
+		History:       hist,
 	})
 
 	// Re-adopt in-flight runs (kubernetes executor).
@@ -169,7 +172,7 @@ func run(configPath string) error {
 	sched.Start()
 
 	// HTTP server.
-	srv := server.New(platforms, disp, st, reg, m, log)
+	srv := server.New(platforms, disp, st, hist, reg, m, log)
 	httpServer := &http.Server{
 		Addr:              cfg.Server.Listen,
 		Handler:           srv.Handler(),

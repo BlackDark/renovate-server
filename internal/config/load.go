@@ -83,6 +83,9 @@ func (c *Config) applyDefaults() {
 	if c.Server.RunTimeout == 0 {
 		c.Server.RunTimeout = 60 * time.Minute
 	}
+	if c.Server.HistorySize == 0 {
+		c.Server.HistorySize = 100
+	}
 	for i := range c.Platforms {
 		if c.Platforms[i].DashboardIssueTitle == "" {
 			c.Platforms[i].DashboardIssueTitle = "Dependency Dashboard"
