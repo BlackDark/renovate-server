@@ -86,6 +86,15 @@ func (c *Config) applyDefaults() {
 	if c.Server.HistorySize == 0 {
 		c.Server.HistorySize = 100
 	}
+	if c.Server.Store.Type == "" {
+		c.Server.Store.Type = "memory"
+	}
+	if c.Server.Store.Redis.KeyPrefix == "" {
+		c.Server.Store.Redis.KeyPrefix = "renovate-server:"
+	}
+	if c.Server.Store.Redis.TTL == 0 {
+		c.Server.Store.Redis.TTL = 2 * time.Hour
+	}
 	for i := range c.Platforms {
 		if c.Platforms[i].DashboardIssueTitle == "" {
 			c.Platforms[i].DashboardIssueTitle = "Dependency Dashboard"
@@ -108,6 +117,15 @@ func (c *Config) applyDefaults() {
 }
 
 func (c *Config) validate() error {
+	switch c.Server.Store.Type {
+	case "memory":
+	case "redis":
+		if c.Server.Store.Redis.URL == "" {
+			return fmt.Errorf("store type redis requires store.redis.url")
+		}
+	default:
+		return fmt.Errorf("store type %q is not supported", c.Server.Store.Type)
+	}
 	if len(c.Platforms) == 0 {
 		return fmt.Errorf("at least one platform must be configured")
 	}

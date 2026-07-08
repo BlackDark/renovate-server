@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -117,7 +118,15 @@ func run(configPath string) error {
 	}
 
 	// Core.
-	st := store.NewMemory()
+	var st store.Store
+	if cfg.Server.Store.Type == "redis" {
+		st, err = store.NewRedis(ctx, cfg.Server.Store.Redis)
+		if err != nil {
+			return fmt.Errorf("redis store: %w", err)
+		}
+	} else {
+		st = store.NewMemory()
+	}
 	reg := prometheus.NewRegistry()
 	m := metrics.New(reg, st)
 	hist := history.New(cfg.Server.HistorySize)
@@ -148,6 +157,29 @@ func run(configPath string) error {
 		for _, run := range runs {
 			disp.Adopt(run, name)
 		}
+	}
+
+	// Persistent store: re-enqueue repos that were still queued when the
+	// previous instance stopped. Runs adopted above already re-locked their
+	// repos; unadopted "running" markers expire via the store TTL.
+	if cfg.Server.Store.Type == "redis" {
+		requeued := 0
+		for key, status := range st.Snapshot() {
+			if status.State != store.StateQueued {
+				continue
+			}
+			parts := strings.SplitN(key, ":", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			st.FinishRun(key) // clear the stale entry so Enqueue starts fresh
+			disp.Enqueue(platform.Event{
+				Repo:   platform.Repo{Platform: parts[0], FullName: parts[1]},
+				Reason: platform.ReasonRerun,
+			})
+			requeued++
+		}
+		log.Info("store recovery finished", "requeuedRepos", requeued)
 	}
 
 	// Cron schedules.

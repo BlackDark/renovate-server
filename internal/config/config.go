@@ -30,7 +30,21 @@ type Server struct {
 	MaxConcurrentRuns int           `yaml:"maxConcurrentRuns"`
 	RunTimeout        time.Duration `yaml:"runTimeout"`
 	// HistorySize is the number of finished runs kept for /api/v1/runs.
-	HistorySize int `yaml:"historySize"`
+	HistorySize int         `yaml:"historySize"`
+	Store       StoreConfig `yaml:"store"`
+}
+
+// StoreConfig selects where repo run state lives.
+type StoreConfig struct {
+	Type  string      `yaml:"type"` // memory (default) | redis
+	Redis RedisConfig `yaml:"redis"`
+}
+
+// RedisConfig configures the redis-backed store.
+type RedisConfig struct {
+	URL       string        `yaml:"url"`       // redis://[:pass@]host:port/db
+	KeyPrefix string        `yaml:"keyPrefix"` // default "renovate-server:"
+	TTL       time.Duration `yaml:"ttl"`       // default 2h; stale entries self-heal
 }
 
 // Log configures slog output.
