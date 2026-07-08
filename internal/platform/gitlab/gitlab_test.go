@@ -127,6 +127,15 @@ const issueTicked = `{
   "changes": {"description": {"previous": "- [ ] <!-- approve-all-pending-prs -->approve all", "current": "- [x] <!-- approve-all-pending-prs -->approve all"}}
 }`
 
+// Real-world shape: dashboard issue has NO per-checkbox markers and no
+// renovate-debug comment — the title is the only renovate signal.
+const issueTickedPlain = `{
+  "object_kind": "issue",
+  "project": {"path_with_namespace": "top-group/app", "default_branch": "main"},
+  "object_attributes": {"iid": 3, "action": "update", "title": "Dependency Dashboard", "description": "- [x] Check this box to trigger a request for Renovate to run again"},
+  "changes": {"description": {"previous": "- [ ] Check this box to trigger a request for Renovate to run again", "current": "- [x] Check this box to trigger a request for Renovate to run again"}}
+}`
+
 const pushByHuman = `{
   "object_kind": "push",
   "ref": "refs/heads/main",
@@ -183,6 +192,10 @@ func TestParseWebhookEvents(t *testing.T) {
 		{"human MR with plain checkbox ignored", "Merge Request Hook", mrHumanTicked, nil},
 		{"issue with wrong title ignored", "Issue Hook", issueTickedWrongTitle, nil},
 		{"issue checkbox ticked", "Issue Hook", issueTicked, &platform.Event{
+			Repo:   platform.Repo{Platform: "gl", FullName: "top-group/app"},
+			Reason: platform.ReasonIssue,
+		}},
+		{"dashboard issue without markers, title identifies, plain checkbox triggers", "Issue Hook", issueTickedPlain, &platform.Event{
 			Repo:   platform.Repo{Platform: "gl", FullName: "top-group/app"},
 			Reason: platform.ReasonIssue,
 		}},

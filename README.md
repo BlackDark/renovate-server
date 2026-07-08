@@ -15,7 +15,9 @@ guarantees a repository never has more than one run in flight.
     `mrFilter.sourceBranchPrefixes` (default `renovate/`) or its author is in
     `mrFilter.authors`; any checkbox tick inside such an MR triggers. Ordinary
     task lists in human MRs never trigger runs (`allowAnyCheckbox` reverts this)
-  - Dependency-dashboard issue checkbox ticks (filtered by issue title)
+  - Dependency-dashboard issue checkbox ticks — the issue title
+    (`dashboardIssueTitle`, default "Dependency Dashboard") identifies the
+    dashboard; any checkbox tick inside it triggers
   - Optional: pushes to the default branch (excluding Renovate's own commits)
   - Repos outside the configured `discovery.groups` are rejected, so a stray
     webhook cannot trigger runs for foreign projects
@@ -85,7 +87,7 @@ a complete annotated example.
 | `baseURL` | gitlab: yes | Instance URL (GitHub: empty for github.com, URL for GHE) |
 | `token` | yes | API token used for repo discovery |
 | `botEmail` | no | Push events authored by this email are ignored |
-| `dashboardIssueTitle` | no | Issue events must match this title (default `Dependency Dashboard`, `*` = any) |
+| `dashboardIssueTitle` | no | Issues with this title are treated as the renovate dashboard: any checkbox tick triggers (default `Dependency Dashboard`, `*` = any title) |
 | `allowAnyCheckbox` | no | Trigger on any checked todo item in any MR/issue; also skips the title filter |
 | `mrFilter.sourceBranchPrefixes` | no | Source-branch prefixes identifying Renovate MRs (default `["renovate/"]`) |
 | `mrFilter.authors` | no | MR/PR author usernames identifying Renovate MRs. GitHub: login from payload; GitLab: resolved via one cached API lookup per author |

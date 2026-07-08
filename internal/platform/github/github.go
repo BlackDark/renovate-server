@@ -100,10 +100,16 @@ func (g *GitHub) ParseWebhook(r *http.Request, body []byte) (*platform.Event, er
 		if !g.events["issue"] || ev.GetAction() != "edited" {
 			return nil, nil
 		}
-		if !g.allowAnyCheckbox && g.dashboardIssueTitle != "*" && ev.GetIssue().GetTitle() != g.dashboardIssueTitle {
+		// A matching title identifies renovate's dependency dashboard; any
+		// checkbox tick inside it triggers (dashboard checkboxes carry no
+		// reliable per-item markers on all renovate versions).
+		identified := g.allowAnyCheckbox || g.dashboardIssueTitle == "*" ||
+			ev.GetIssue().GetTitle() == g.dashboardIssueTitle ||
+			platform.HasRenovateDebugMarker(ev.GetIssue().GetBody())
+		if !identified {
 			return nil, nil
 		}
-		if !g.ticked(previousBody(ev.GetChanges()), ev.GetIssue().GetBody()) {
+		if !tickedPlain(previousBody(ev.GetChanges()), ev.GetIssue().GetBody()) {
 			return nil, nil
 		}
 		return g.event(ev.GetRepo().GetFullName(), platform.ReasonIssue), nil
@@ -132,18 +138,13 @@ func previousBody(changes *gogithub.EditChange) string {
 	return *changes.Body.From
 }
 
-// ticked reports whether the number of checked todo items increased between
-// the previous and current body. By default only items carrying a Renovate
-// HTML marker count; allowAnyCheckbox widens this to any todo item.
-func (g *GitHub) ticked(previous, current string) bool {
+// tickedPlain reports whether the number of checked todo items (of any
+// kind) increased between the previous and current body.
+func tickedPlain(previous, current string) bool {
 	if current == "" {
 		return false
 	}
-	count := platform.CheckedMarkerItems
-	if g.allowAnyCheckbox {
-		count = platform.CheckedItems
-	}
-	return count(current) > count(previous)
+	return platform.CheckedItems(current) > platform.CheckedItems(previous)
 }
 
 // prTicked decides whether a PR body edit is a renovate checkbox tick. PRs
