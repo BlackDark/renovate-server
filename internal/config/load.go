@@ -83,6 +83,11 @@ func (c *Config) applyDefaults() {
 	if c.Server.RunTimeout == 0 {
 		c.Server.RunTimeout = 60 * time.Minute
 	}
+	for i := range c.Platforms {
+		if c.Platforms[i].DashboardIssueTitle == "" {
+			c.Platforms[i].DashboardIssueTitle = "Dependency Dashboard"
+		}
+	}
 	for i := range c.Executors {
 		e := &c.Executors[i]
 		if e.Type == ExecutorGitLabPipeline {

@@ -40,15 +40,21 @@ type Log struct {
 // Platform describes one git hosting platform (GitLab instance or GitHub
 // org) with its webhook, discovery and schedule settings.
 type Platform struct {
-	Name      string    `yaml:"name"`
-	Type      string    `yaml:"type"` // gitlab|github
-	BaseURL   string    `yaml:"baseURL"`
-	Token     string    `yaml:"token"`
-	BotEmail  string    `yaml:"botEmail"` // push events from this author are ignored
-	Webhook   Webhook   `yaml:"webhook"`
-	Events    []string  `yaml:"events"` // merge_request|issue|push
-	Discovery Discovery `yaml:"discovery"`
-	Schedule  Schedule  `yaml:"schedule"`
+	Name     string `yaml:"name"`
+	Type     string `yaml:"type"` // gitlab|github
+	BaseURL  string `yaml:"baseURL"`
+	Token    string `yaml:"token"`
+	BotEmail string `yaml:"botEmail"` // push events from this author are ignored
+	// DashboardIssueTitle filters issue events: only issues with this title
+	// trigger runs. "*" disables the filter. Default "Dependency Dashboard".
+	DashboardIssueTitle string `yaml:"dashboardIssueTitle"`
+	// AllowAnyCheckbox reverts to triggering on any checked markdown todo
+	// item instead of requiring Renovate's HTML comment markers.
+	AllowAnyCheckbox bool      `yaml:"allowAnyCheckbox"`
+	Webhook          Webhook   `yaml:"webhook"`
+	Events           []string  `yaml:"events"` // merge_request|issue|push
+	Discovery        Discovery `yaml:"discovery"`
+	Schedule         Schedule  `yaml:"schedule"`
 }
 
 // Webhook is the receiving endpoint for a platform's webhooks.

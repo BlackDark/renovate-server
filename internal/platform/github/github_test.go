@@ -18,14 +18,15 @@ import (
 
 func testConfig(baseURL string) config.Platform {
 	return config.Platform{
-		Name:      "gh",
-		Type:      config.PlatformGitHub,
-		BaseURL:   baseURL,
-		Token:     "ghp_test",
-		BotEmail:  "renovate@example.com",
-		Webhook:   config.Webhook{Path: "/webhook/github", Secret: "s3cret"},
-		Events:    []string{"merge_request", "issue", "push"},
-		Discovery: config.Discovery{Groups: []string{"my-org"}},
+		Name:                "gh",
+		Type:                config.PlatformGitHub,
+		BaseURL:             baseURL,
+		Token:               "ghp_test",
+		BotEmail:            "renovate@example.com",
+		Webhook:             config.Webhook{Path: "/webhook/github", Secret: "s3cret"},
+		Events:              []string{"merge_request", "issue", "push"},
+		DashboardIssueTitle: "Dependency Dashboard",
+		Discovery:           config.Discovery{Groups: []string{"my-org"}},
 	}
 }
 
@@ -54,22 +55,36 @@ func webhookRequest(eventType, secret, body string) *http.Request {
 
 const prTicked = `{
   "action": "edited",
-  "pull_request": {"body": "- [x] rebase"},
-  "changes": {"body": {"from": "- [ ] rebase"}},
+  "pull_request": {"body": "- [x] <!-- rebase-check -->rebase"},
+  "changes": {"body": {"from": "- [ ] <!-- rebase-check -->rebase"}},
   "repository": {"full_name": "my-org/app", "default_branch": "main"}
 }`
 
 const prUnticked = `{
   "action": "edited",
-  "pull_request": {"body": "- [ ] rebase"},
-  "changes": {"body": {"from": "- [x] rebase"}},
+  "pull_request": {"body": "- [ ] <!-- rebase-check -->rebase"},
+  "changes": {"body": {"from": "- [x] <!-- rebase-check -->rebase"}},
+  "repository": {"full_name": "my-org/app", "default_branch": "main"}
+}`
+
+const prTickedNoMarker = `{
+  "action": "edited",
+  "pull_request": {"body": "- [x] human task"},
+  "changes": {"body": {"from": "- [ ] human task"}},
   "repository": {"full_name": "my-org/app", "default_branch": "main"}
 }`
 
 const issueTicked = `{
   "action": "edited",
-  "issue": {"body": "- [x] approve all"},
-  "changes": {"body": {"from": "- [ ] approve all"}},
+  "issue": {"title": "Dependency Dashboard", "body": "- [x] <!-- approve-all-pending-prs -->approve all"},
+  "changes": {"body": {"from": "- [ ] <!-- approve-all-pending-prs -->approve all"}},
+  "repository": {"full_name": "my-org/app", "default_branch": "main"}
+}`
+
+const issueTickedWrongTitle = `{
+  "action": "edited",
+  "issue": {"title": "Some Issue", "body": "- [x] <!-- approve-all-pending-prs -->approve"},
+  "changes": {"body": {"from": "- [ ] <!-- approve-all-pending-prs -->approve"}},
   "repository": {"full_name": "my-org/app", "default_branch": "main"}
 }`
 
@@ -107,6 +122,8 @@ func TestParseWebhookEvents(t *testing.T) {
 			Reason: platform.ReasonMergeRequest,
 		}},
 		{"pr checkbox unticked", "pull_request", prUnticked, nil},
+		{"pr checkbox without renovate marker ignored", "pull_request", prTickedNoMarker, nil},
+		{"issue with wrong title ignored", "issues", issueTickedWrongTitle, nil},
 		{"issue checkbox ticked", "issues", issueTicked, &platform.Event{
 			Repo:   platform.Repo{Platform: "gh", FullName: "my-org/app"},
 			Reason: platform.ReasonIssue,
@@ -134,6 +151,39 @@ func TestParseWebhookEvents(t *testing.T) {
 				t.Fatalf("event = %+v, want %+v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestParseWebhookAllowAnyCheckbox(t *testing.T) {
+	cfg := testConfig("")
+	cfg.AllowAnyCheckbox = true
+	g, err := New(cfg, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := webhookRequest("pull_request", "s3cret", prTickedNoMarker)
+	got, err := g.ParseWebhook(r, []byte(prTickedNoMarker))
+	if err != nil || got == nil {
+		t.Fatalf("allowAnyCheckbox should trigger on plain checkbox, got %+v, %v", got, err)
+	}
+	r = webhookRequest("issues", "s3cret", issueTickedWrongTitle)
+	got, err = g.ParseWebhook(r, []byte(issueTickedWrongTitle))
+	if err != nil || got == nil {
+		t.Fatalf("allowAnyCheckbox should skip title filter, got %+v, %v", got, err)
+	}
+}
+
+func TestParseWebhookDashboardTitleWildcard(t *testing.T) {
+	cfg := testConfig("")
+	cfg.DashboardIssueTitle = "*"
+	g, err := New(cfg, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := webhookRequest("issues", "s3cret", issueTickedWrongTitle)
+	got, err := g.ParseWebhook(r, []byte(issueTickedWrongTitle))
+	if err != nil || got == nil {
+		t.Fatalf("wildcard title should allow any issue, got %+v, %v", got, err)
 	}
 }
 

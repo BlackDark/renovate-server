@@ -18,16 +18,18 @@ import (
 
 // GitLab implements platform.Platform for a GitLab instance.
 type GitLab struct {
-	name            string
-	client          *gogitlab.Client
-	webhookPath     string
-	secret          string
-	botEmail        string
-	events          map[string]bool
-	groups          []string
-	excludeArchived bool
-	schedule        config.Schedule
-	log             *slog.Logger
+	name                string
+	client              *gogitlab.Client
+	webhookPath         string
+	secret              string
+	botEmail            string
+	dashboardIssueTitle string
+	allowAnyCheckbox    bool
+	events              map[string]bool
+	groups              []string
+	excludeArchived     bool
+	schedule            config.Schedule
+	log                 *slog.Logger
 }
 
 // New builds a GitLab adapter from its platform config section.
@@ -41,16 +43,18 @@ func New(cfg config.Platform, log *slog.Logger) (*GitLab, error) {
 		events[e] = true
 	}
 	return &GitLab{
-		name:            cfg.Name,
-		client:          client,
-		webhookPath:     cfg.Webhook.Path,
-		secret:          cfg.Webhook.Secret,
-		botEmail:        cfg.BotEmail,
-		events:          events,
-		groups:          cfg.Discovery.Groups,
-		excludeArchived: cfg.Discovery.ExcludeArchived,
-		schedule:        cfg.Schedule,
-		log:             log.With("platform", cfg.Name),
+		name:                cfg.Name,
+		client:              client,
+		webhookPath:         cfg.Webhook.Path,
+		secret:              cfg.Webhook.Secret,
+		botEmail:            cfg.BotEmail,
+		dashboardIssueTitle: cfg.DashboardIssueTitle,
+		allowAnyCheckbox:    cfg.AllowAnyCheckbox,
+		events:              events,
+		groups:              cfg.Discovery.Groups,
+		excludeArchived:     cfg.Discovery.ExcludeArchived,
+		schedule:            cfg.Schedule,
+		log:                 log.With("platform", cfg.Name),
 	}, nil
 }
 
@@ -85,7 +89,7 @@ func (g *GitLab) ParseWebhook(r *http.Request, body []byte) (*platform.Event, er
 		if !g.events["merge_request"] {
 			return nil, nil
 		}
-		if !checkboxTicked(ev.Changes.Description.Previous, ev.Changes.Description.Current) {
+		if !g.ticked(ev.Changes.Description.Previous, ev.Changes.Description.Current) {
 			return nil, nil
 		}
 		return g.event(ev.Project.PathWithNamespace, platform.ReasonMergeRequest), nil
@@ -94,7 +98,10 @@ func (g *GitLab) ParseWebhook(r *http.Request, body []byte) (*platform.Event, er
 		if !g.events["issue"] {
 			return nil, nil
 		}
-		if !checkboxTicked(ev.Changes.Description.Previous, ev.Changes.Description.Current) {
+		if !g.allowAnyCheckbox && g.dashboardIssueTitle != "*" && ev.ObjectAttributes.Title != g.dashboardIssueTitle {
+			return nil, nil
+		}
+		if !g.ticked(ev.Changes.Description.Previous, ev.Changes.Description.Current) {
 			return nil, nil
 		}
 		return g.event(ev.Project.PathWithNamespace, platform.ReasonIssue), nil
@@ -116,13 +123,18 @@ func (g *GitLab) ParseWebhook(r *http.Request, body []byte) (*platform.Event, er
 	}
 }
 
-// checkboxTicked reports whether the number of checked todo items increased
-// between the previous and current description.
-func checkboxTicked(previous, current string) bool {
+// ticked reports whether the number of checked todo items increased between
+// the previous and current description. By default only items carrying a
+// Renovate HTML marker count; allowAnyCheckbox widens this to any todo item.
+func (g *GitLab) ticked(previous, current string) bool {
 	if current == "" {
 		return false
 	}
-	return platform.CheckedItems(current) > platform.CheckedItems(previous)
+	count := platform.CheckedMarkerItems
+	if g.allowAnyCheckbox {
+		count = platform.CheckedItems
+	}
+	return count(current) > count(previous)
 }
 
 func (g *GitLab) event(fullName string, reason platform.Reason) *platform.Event {

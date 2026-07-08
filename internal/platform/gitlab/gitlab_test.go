@@ -15,13 +15,14 @@ import (
 
 func testConfig(baseURL string) config.Platform {
 	return config.Platform{
-		Name:     "gl",
-		Type:     config.PlatformGitLab,
-		BaseURL:  baseURL,
-		Token:    "glpat-test",
-		BotEmail: "renovate@example.com",
-		Webhook:  config.Webhook{Path: "/webhook/gitlab", Secret: "s3cret"},
-		Events:   []string{"merge_request", "issue", "push"},
+		Name:                "gl",
+		Type:                config.PlatformGitLab,
+		BaseURL:             baseURL,
+		Token:               "glpat-test",
+		BotEmail:            "renovate@example.com",
+		Webhook:             config.Webhook{Path: "/webhook/gitlab", Secret: "s3cret"},
+		Events:              []string{"merge_request", "issue", "push"},
+		DashboardIssueTitle: "Dependency Dashboard",
 		Discovery: config.Discovery{
 			Groups:          []string{"top-group"},
 			ExcludeArchived: true,
@@ -48,15 +49,29 @@ func webhookRequest(eventType, token, body string) *http.Request {
 const mrTicked = `{
   "object_kind": "merge_request",
   "project": {"path_with_namespace": "top-group/app", "default_branch": "main"},
-  "object_attributes": {"iid": 7, "action": "update", "description": "- [x] rebase"},
-  "changes": {"description": {"previous": "- [ ] rebase", "current": "- [x] rebase"}}
+  "object_attributes": {"iid": 7, "action": "update", "description": "- [x] <!-- rebase-check -->rebase"},
+  "changes": {"description": {"previous": "- [ ] <!-- rebase-check -->rebase", "current": "- [x] <!-- rebase-check -->rebase"}}
 }`
 
 const mrUnticked = `{
   "object_kind": "merge_request",
   "project": {"path_with_namespace": "top-group/app", "default_branch": "main"},
-  "object_attributes": {"iid": 7, "action": "update", "description": "- [ ] rebase"},
-  "changes": {"description": {"previous": "- [x] rebase", "current": "- [ ] rebase"}}
+  "object_attributes": {"iid": 7, "action": "update", "description": "- [ ] <!-- rebase-check -->rebase"},
+  "changes": {"description": {"previous": "- [x] <!-- rebase-check -->rebase", "current": "- [ ] <!-- rebase-check -->rebase"}}
+}`
+
+const mrTickedNoMarker = `{
+  "object_kind": "merge_request",
+  "project": {"path_with_namespace": "top-group/app", "default_branch": "main"},
+  "object_attributes": {"iid": 7, "action": "update", "description": "- [x] human task"},
+  "changes": {"description": {"previous": "- [ ] human task", "current": "- [x] human task"}}
+}`
+
+const issueTickedWrongTitle = `{
+  "object_kind": "issue",
+  "project": {"path_with_namespace": "top-group/app", "default_branch": "main"},
+  "object_attributes": {"iid": 2, "action": "update", "title": "Some Issue", "description": "- [x] <!-- approve-all-pending-prs -->approve"},
+  "changes": {"description": {"previous": "- [ ] <!-- approve-all-pending-prs -->approve", "current": "- [x] <!-- approve-all-pending-prs -->approve"}}
 }`
 
 const mrNoDescriptionChange = `{
@@ -69,8 +84,8 @@ const mrNoDescriptionChange = `{
 const issueTicked = `{
   "object_kind": "issue",
   "project": {"path_with_namespace": "top-group/app", "default_branch": "main"},
-  "object_attributes": {"iid": 1, "action": "update", "title": "Dependency Dashboard", "description": "- [x] approve all"},
-  "changes": {"description": {"previous": "- [ ] approve all", "current": "- [x] approve all"}}
+  "object_attributes": {"iid": 1, "action": "update", "title": "Dependency Dashboard", "description": "- [x] <!-- approve-all-pending-prs -->approve all"},
+  "changes": {"description": {"previous": "- [ ] <!-- approve-all-pending-prs -->approve all", "current": "- [x] <!-- approve-all-pending-prs -->approve all"}}
 }`
 
 const pushByHuman = `{
@@ -117,6 +132,8 @@ func TestParseWebhookEvents(t *testing.T) {
 		}},
 		{"mr checkbox unticked", "Merge Request Hook", mrUnticked, nil},
 		{"mr without description change", "Merge Request Hook", mrNoDescriptionChange, nil},
+		{"mr checkbox without renovate marker ignored", "Merge Request Hook", mrTickedNoMarker, nil},
+		{"issue with wrong title ignored", "Issue Hook", issueTickedWrongTitle, nil},
 		{"issue checkbox ticked", "Issue Hook", issueTicked, &platform.Event{
 			Repo:   platform.Repo{Platform: "gl", FullName: "top-group/app"},
 			Reason: platform.ReasonIssue,
@@ -145,6 +162,41 @@ func TestParseWebhookEvents(t *testing.T) {
 				t.Fatalf("event = %+v, want %+v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestParseWebhookAllowAnyCheckbox(t *testing.T) {
+	cfg := testConfig("https://gitlab.example.com")
+	cfg.AllowAnyCheckbox = true
+	g, err := New(cfg, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// plain checkbox without marker now triggers
+	r := webhookRequest("Merge Request Hook", "s3cret", mrTickedNoMarker)
+	got, err := g.ParseWebhook(r, []byte(mrTickedNoMarker))
+	if err != nil || got == nil {
+		t.Fatalf("allowAnyCheckbox should trigger on plain checkbox, got %+v, %v", got, err)
+	}
+	// title filter is skipped too
+	r = webhookRequest("Issue Hook", "s3cret", issueTickedWrongTitle)
+	got, err = g.ParseWebhook(r, []byte(issueTickedWrongTitle))
+	if err != nil || got == nil {
+		t.Fatalf("allowAnyCheckbox should skip title filter, got %+v, %v", got, err)
+	}
+}
+
+func TestParseWebhookDashboardTitleWildcard(t *testing.T) {
+	cfg := testConfig("https://gitlab.example.com")
+	cfg.DashboardIssueTitle = "*"
+	g, err := New(cfg, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := webhookRequest("Issue Hook", "s3cret", issueTickedWrongTitle)
+	got, err := g.ParseWebhook(r, []byte(issueTickedWrongTitle))
+	if err != nil || got == nil {
+		t.Fatalf("wildcard title should allow any issue, got %+v, %v", got, err)
 	}
 }
 

@@ -16,16 +16,18 @@ import (
 
 // GitHub implements platform.Platform for github.com or GitHub Enterprise.
 type GitHub struct {
-	name            string
-	client          *gogithub.Client
-	webhookPath     string
-	secret          []byte
-	botEmail        string
-	events          map[string]bool
-	orgs            []string
-	excludeArchived bool
-	schedule        config.Schedule
-	log             *slog.Logger
+	name                string
+	client              *gogithub.Client
+	webhookPath         string
+	secret              []byte
+	botEmail            string
+	dashboardIssueTitle string
+	allowAnyCheckbox    bool
+	events              map[string]bool
+	orgs                []string
+	excludeArchived     bool
+	schedule            config.Schedule
+	log                 *slog.Logger
 }
 
 // New builds a GitHub adapter from its platform config section.
@@ -43,16 +45,18 @@ func New(cfg config.Platform, log *slog.Logger) (*GitHub, error) {
 		events[e] = true
 	}
 	return &GitHub{
-		name:            cfg.Name,
-		client:          client,
-		webhookPath:     cfg.Webhook.Path,
-		secret:          []byte(cfg.Webhook.Secret),
-		botEmail:        cfg.BotEmail,
-		events:          events,
-		orgs:            cfg.Discovery.Groups,
-		excludeArchived: cfg.Discovery.ExcludeArchived,
-		schedule:        cfg.Schedule,
-		log:             log.With("platform", cfg.Name),
+		name:                cfg.Name,
+		client:              client,
+		webhookPath:         cfg.Webhook.Path,
+		secret:              []byte(cfg.Webhook.Secret),
+		botEmail:            cfg.BotEmail,
+		dashboardIssueTitle: cfg.DashboardIssueTitle,
+		allowAnyCheckbox:    cfg.AllowAnyCheckbox,
+		events:              events,
+		orgs:                cfg.Discovery.Groups,
+		excludeArchived:     cfg.Discovery.ExcludeArchived,
+		schedule:            cfg.Schedule,
+		log:                 log.With("platform", cfg.Name),
 	}, nil
 }
 
@@ -84,7 +88,7 @@ func (g *GitHub) ParseWebhook(r *http.Request, body []byte) (*platform.Event, er
 		if !g.events["merge_request"] || ev.GetAction() != "edited" {
 			return nil, nil
 		}
-		if !checkboxTicked(previousBody(ev.GetChanges()), ev.GetPullRequest().GetBody()) {
+		if !g.ticked(previousBody(ev.GetChanges()), ev.GetPullRequest().GetBody()) {
 			return nil, nil
 		}
 		return g.event(ev.GetRepo().GetFullName(), platform.ReasonMergeRequest), nil
@@ -93,7 +97,10 @@ func (g *GitHub) ParseWebhook(r *http.Request, body []byte) (*platform.Event, er
 		if !g.events["issue"] || ev.GetAction() != "edited" {
 			return nil, nil
 		}
-		if !checkboxTicked(previousBody(ev.GetChanges()), ev.GetIssue().GetBody()) {
+		if !g.allowAnyCheckbox && g.dashboardIssueTitle != "*" && ev.GetIssue().GetTitle() != g.dashboardIssueTitle {
+			return nil, nil
+		}
+		if !g.ticked(previousBody(ev.GetChanges()), ev.GetIssue().GetBody()) {
 			return nil, nil
 		}
 		return g.event(ev.GetRepo().GetFullName(), platform.ReasonIssue), nil
@@ -122,11 +129,18 @@ func previousBody(changes *gogithub.EditChange) string {
 	return *changes.Body.From
 }
 
-func checkboxTicked(previous, current string) bool {
+// ticked reports whether the number of checked todo items increased between
+// the previous and current body. By default only items carrying a Renovate
+// HTML marker count; allowAnyCheckbox widens this to any todo item.
+func (g *GitHub) ticked(previous, current string) bool {
 	if current == "" {
 		return false
 	}
-	return platform.CheckedItems(current) > platform.CheckedItems(previous)
+	count := platform.CheckedMarkerItems
+	if g.allowAnyCheckbox {
+		count = platform.CheckedItems
+	}
+	return count(current) > count(previous)
 }
 
 func (g *GitHub) event(fullName string, reason platform.Reason) *platform.Event {
