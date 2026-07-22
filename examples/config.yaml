@@ -47,6 +47,10 @@ executors:
     project: infra/renovate-runner
     ref: main
     triggerToken: ${PIPELINE_TRIGGER_TOKEN}
+    # Prefer inputs when the runner uses spec:inputs (GitLab 17.10+).
+    # inputs:
+    #   MANUAL_DISCOVER_FILTER: "{{ .Repo }}"
+    #   LOG_LEVEL: "INFO"
     variables:
       RENOVATE_REPO: "{{ .Repo }}"
       TRIGGER_REASON: "{{ .Reason }}"

@@ -45,6 +45,7 @@ type Executor struct {
 	ref          string
 	triggerToken string
 	variables    map[string]*template.Template
+	inputs       map[string]*template.Template
 	pollInterval time.Duration
 	handles      HandleStore
 	log          *slog.Logger
@@ -69,6 +70,14 @@ func New(cfg config.Executor, client *gogitlab.Client, handles HandleStore, log 
 		}
 		vars[k] = tmpl
 	}
+	inputs := make(map[string]*template.Template, len(cfg.Inputs))
+	for k, v := range cfg.Inputs {
+		tmpl, err := template.New(k).Option("missingkey=error").Parse(v)
+		if err != nil {
+			return nil, fmt.Errorf("executor %q: input %q: %w", cfg.Name, k, err)
+		}
+		inputs[k] = tmpl
+	}
 	return &Executor{
 		name:         cfg.Name,
 		client:       client,
@@ -76,6 +85,7 @@ func New(cfg config.Executor, client *gogitlab.Client, handles HandleStore, log 
 		ref:          cfg.Ref,
 		triggerToken: cfg.TriggerToken,
 		variables:    vars,
+		inputs:       inputs,
 		pollInterval: cfg.PollInterval,
 		handles:      handles,
 		log:          log.With("executor", cfg.Name),
@@ -101,12 +111,21 @@ func (e *Executor) Run(ctx context.Context, spec executor.RunSpec) error {
 		}
 		vars[k] = sb.String()
 	}
+	inputs := make(gogitlab.PipelineInputsOption, len(e.inputs))
+	for k, tmpl := range e.inputs {
+		var sb strings.Builder
+		if err := tmpl.Execute(&sb, data); err != nil {
+			return fmt.Errorf("render input %q: %w", k, err)
+		}
+		inputs[k] = gogitlab.NewPipelineInputValue(sb.String())
+	}
 
 	pipeline, _, err := e.client.PipelineTriggers.RunPipelineTrigger(e.project,
 		&gogitlab.RunPipelineTriggerOptions{
 			Ref:       gogitlab.Ptr(e.ref),
 			Token:     gogitlab.Ptr(e.triggerToken),
 			Variables: vars,
+			Inputs:    inputs,
 		}, gogitlab.WithContext(ctx))
 	if err != nil {
 		return fmt.Errorf("trigger pipeline in %q: %w", e.project, err)
