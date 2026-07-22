@@ -112,6 +112,24 @@ func TestLoadUnsetEnvVarFails(t *testing.T) {
 	}
 }
 
+func TestValidationRejectsBadResourceQuantity(t *testing.T) {
+	t.Setenv("TEST_GL_TOKEN", "x")
+	t.Setenv("TEST_GL_SECRET", "y")
+	cfg := strings.Replace(validConfig, "rules:", `  - name: k8s
+    type: kubernetes
+    namespace: renovate
+    image: renovate/renovate
+    pod:
+      resources:
+        requests:
+          cpu: "not-a-quantity"
+rules:`, 1)
+	_, err := Load(writeConfig(t, cfg))
+	if err == nil || !strings.Contains(err.Error(), "invalid resource quantity") {
+		t.Fatalf("want quantity error, got %v", err)
+	}
+}
+
 func TestValidationErrors(t *testing.T) {
 	t.Setenv("TEST_GL_TOKEN", "x")
 	t.Setenv("TEST_GL_SECRET", "y")

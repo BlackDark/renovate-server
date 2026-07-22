@@ -130,6 +130,7 @@ type Executor struct {
 	Image     string        `yaml:"image"` // also used by docker
 	CachePVC  string        `yaml:"cachePVC"`
 	JobTTL    time.Duration `yaml:"jobTTL"`
+	Pod       PodConfig     `yaml:"pod"`
 
 	// docker
 	CacheVolume string `yaml:"cacheVolume"`
@@ -137,6 +138,32 @@ type Executor struct {
 
 	// kubernetes + docker: extra env for the renovate container
 	Env map[string]string `yaml:"env"`
+}
+
+// PodConfig customizes the pod of kubernetes-executor Jobs.
+type PodConfig struct {
+	Resources          ResourceConfig    `yaml:"resources"`
+	NodeSelector       map[string]string `yaml:"nodeSelector"`
+	Tolerations        []Toleration      `yaml:"tolerations"`
+	ServiceAccountName string            `yaml:"serviceAccountName"`
+	ImagePullSecrets   []string          `yaml:"imagePullSecrets"`
+	// ActiveDeadlineSeconds lets the cluster kill runaway jobs; the server's
+	// runTimeout stays authoritative for the repo lock.
+	ActiveDeadlineSeconds int64 `yaml:"activeDeadlineSeconds"`
+}
+
+// ResourceConfig holds k8s resource quantities as strings (e.g. "250m").
+type ResourceConfig struct {
+	Requests map[string]string `yaml:"requests"`
+	Limits   map[string]string `yaml:"limits"`
+}
+
+// Toleration mirrors the k8s toleration fields the executor supports.
+type Toleration struct {
+	Key      string `yaml:"key"`
+	Operator string `yaml:"operator"` // Equal|Exists
+	Value    string `yaml:"value"`
+	Effect   string `yaml:"effect"` // NoSchedule|PreferNoSchedule|NoExecute
 }
 
 // Rule routes repos (matched by doublestar glob on the full name) to an

@@ -16,6 +16,7 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8s "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -45,6 +46,7 @@ type Executor struct {
 	cachePVC     string
 	jobTTL       time.Duration
 	env          map[string]string
+	pod          config.PodConfig
 	pollInterval time.Duration
 	log          *slog.Logger
 }
@@ -59,6 +61,7 @@ func New(cfg config.Executor, client k8s.Interface, log *slog.Logger) *Executor 
 		cachePVC:     cfg.CachePVC,
 		jobTTL:       cfg.JobTTL,
 		env:          cfg.Env,
+		pod:          cfg.Pod,
 		pollInterval: time.Second,
 		log:          log.With("executor", cfg.Name),
 	}
@@ -188,6 +191,24 @@ func (e *Executor) buildJob(spec executor.RunSpec) *batchv1.Job {
 	runAsNonRoot := true
 	noPrivEsc := false
 
+	var activeDeadline *int64
+	if e.pod.ActiveDeadlineSeconds > 0 {
+		activeDeadline = &e.pod.ActiveDeadlineSeconds
+	}
+	pullSecrets := make([]corev1.LocalObjectReference, 0, len(e.pod.ImagePullSecrets))
+	for _, name := range e.pod.ImagePullSecrets {
+		pullSecrets = append(pullSecrets, corev1.LocalObjectReference{Name: name})
+	}
+	tolerations := make([]corev1.Toleration, 0, len(e.pod.Tolerations))
+	for _, tol := range e.pod.Tolerations {
+		tolerations = append(tolerations, corev1.Toleration{
+			Key:      tol.Key,
+			Operator: corev1.TolerationOperator(tol.Operator),
+			Value:    tol.Value,
+			Effect:   corev1.TaintEffect(tol.Effect),
+		})
+	}
+
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -205,12 +226,17 @@ func (e *Executor) buildJob(spec executor.RunSpec) *batchv1.Job {
 		Spec: batchv1.JobSpec{
 			BackoffLimit:            &backoffLimit,
 			TTLSecondsAfterFinished: &ttl,
+			ActiveDeadlineSeconds:   activeDeadline,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{labelManagedBy: labelManagedByVal},
 				},
 				Spec: corev1.PodSpec{
-					RestartPolicy: corev1.RestartPolicyNever,
+					RestartPolicy:      corev1.RestartPolicyNever,
+					ServiceAccountName: e.pod.ServiceAccountName,
+					NodeSelector:       e.pod.NodeSelector,
+					Tolerations:        tolerations,
+					ImagePullSecrets:   pullSecrets,
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsNonRoot: &runAsNonRoot,
 					},
@@ -220,6 +246,7 @@ func (e *Executor) buildJob(spec executor.RunSpec) *batchv1.Job {
 						Image:        e.image,
 						Env:          env,
 						VolumeMounts: mounts,
+						Resources:    resourceRequirements(e.pod.Resources),
 						SecurityContext: &corev1.SecurityContext{
 							AllowPrivilegeEscalation: &noPrivEsc,
 						},
@@ -228,6 +255,30 @@ func (e *Executor) buildJob(spec executor.RunSpec) *batchv1.Job {
 			},
 		},
 	}
+}
+
+// resourceRequirements converts config quantity strings to k8s resources.
+// Quantities are validated at config load; unparsable values are skipped.
+func resourceRequirements(cfg config.ResourceConfig) corev1.ResourceRequirements {
+	return corev1.ResourceRequirements{
+		Requests: resourceList(cfg.Requests),
+		Limits:   resourceList(cfg.Limits),
+	}
+}
+
+func resourceList(quantities map[string]string) corev1.ResourceList {
+	if len(quantities) == 0 {
+		return nil
+	}
+	out := corev1.ResourceList{}
+	for name, val := range quantities {
+		q, err := resource.ParseQuantity(val)
+		if err != nil {
+			continue
+		}
+		out[corev1.ResourceName(name)] = q
+	}
+	return out
 }
 
 func repoHash(key string) string {
