@@ -8,9 +8,22 @@
 #   3. Settings -> CI/CD -> Variables: add RENOVATE_TOKEN (a bot user's PAT
 #      with api scope, masked).
 #
-# The server triggers with variables:
+# The server can pass CI/CD variables and/or pipeline inputs (GitLab 17.10+).
+#
+# variables (this example):
 #   RENOVATE_REPO   - the repository to run on (from `variables` templates)
 #   TRIGGER_REASON  - merge_request | issue | push | cron | rerun
+#
+# inputs (optional alternative; executor config key `inputs`):
+#   spec:
+#     inputs:
+#       MANUAL_DISCOVER_FILTER:
+#         type: string
+#         default: ""
+#   ---
+#   Then reference with $[[ inputs.MANUAL_DISCOVER_FILTER ]] and trigger with:
+#     inputs:
+#       MANUAL_DISCOVER_FILTER: "{{ .Repo }}"
 
 workflow:
   rules:

@@ -28,6 +28,7 @@ type pipelineServer struct {
 	finalStatus     string
 	pollsUntilFinal int32
 	gotVars         map[string]string
+	gotInputs       map[string]any
 	gotRef          string
 }
 
@@ -43,12 +44,14 @@ func newPipelineServer(t *testing.T, finalStatus string, pollsUntilFinal int32) 
 				Ref       string            `json:"ref"`
 				Token     string            `json:"token"`
 				Variables map[string]string `json:"variables"`
+				Inputs    map[string]any    `json:"inputs"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 				t.Errorf("decode trigger payload: %v", err)
 			}
 			ps.gotRef = payload.Ref
 			ps.gotVars = payload.Variables
+			ps.gotInputs = payload.Inputs
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)
 			fmt.Fprint(w, `{"id": 42, "status": "created"}`)
@@ -133,6 +136,10 @@ func newFromClient(t *testing.T, client *gogitlab.Client, handles HandleStore) (
 			"TRIGGER_REASON": "{{ .Reason }}",
 			"STATIC_VAR":     "fixed",
 		},
+		Inputs: map[string]string{
+			"MANUAL_DISCOVER_FILTER": "{{ .Repo }}",
+			"LOG_LEVEL":              "INFO",
+		},
 		PollInterval: 5 * time.Millisecond,
 	}, client, handles, slog.New(slog.DiscardHandler))
 }
@@ -164,6 +171,12 @@ func TestRunSuccess(t *testing.T) {
 	}
 	if srv.gotVars["STATIC_VAR"] != "fixed" {
 		t.Errorf("STATIC_VAR = %q", srv.gotVars["STATIC_VAR"])
+	}
+	if srv.gotInputs["MANUAL_DISCOVER_FILTER"] != "top-group/app" {
+		t.Errorf("input MANUAL_DISCOVER_FILTER = %v, want top-group/app", srv.gotInputs["MANUAL_DISCOVER_FILTER"])
+	}
+	if srv.gotInputs["LOG_LEVEL"] != "INFO" {
+		t.Errorf("input LOG_LEVEL = %v", srv.gotInputs["LOG_LEVEL"])
 	}
 }
 
@@ -199,6 +212,21 @@ func TestInvalidTemplateRejectedAtConstruction(t *testing.T) {
 	}, client, nil, slog.New(slog.DiscardHandler))
 	if err == nil {
 		t.Fatal("want template parse error at construction")
+	}
+}
+
+func TestInvalidInputTemplateRejectedAtConstruction(t *testing.T) {
+	client, err := gogitlab.NewClient("tok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = New(config.Executor{
+		Name: "ci", Project: "p", TriggerToken: "t", Ref: "main",
+		Inputs:       map[string]string{"BAD": "{{ .Nope"},
+		PollInterval: time.Second,
+	}, client, nil, slog.New(slog.DiscardHandler))
+	if err == nil {
+		t.Fatal("want input template parse error at construction")
 	}
 }
 

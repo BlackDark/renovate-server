@@ -25,7 +25,7 @@ guarantees a repository never has more than one run in flight.
   groups/orgs and run each through the same pipeline as webhook events
 - **Three executors**, routed per repo by glob rules:
   - `gitlabPipeline`: trigger a pipeline in a central runner project with
-    variables and poll it to completion
+    variables/inputs and poll it to completion
   - `kubernetes`: spawn a Job running the Renovate image (re-adopts running
     Jobs after a server restart via labels)
   - `docker`: run a Renovate container on the local Docker daemon
@@ -104,9 +104,11 @@ a complete annotated example.
 Common: `name`, `type` (`gitlabPipeline` | `kubernetes` | `docker`).
 
 **gitlabPipeline** — `platform` (a gitlab platform name), `project` (the runner
-project), `ref` (default `main`), `triggerToken`, `variables` (values are Go
-templates with `{{ .Repo }}`, `{{ .Platform }}`, `{{ .Reason }}`),
-`pollInterval` (default `15s`). See
+project), `ref` (default `main`), `triggerToken`, `variables` and optional
+`inputs` (values are Go templates with `{{ .Repo }}`, `{{ .Platform }}`,
+`{{ .Reason }}`), `pollInterval` (default `15s`). `inputs` maps to GitLab
+pipeline inputs (`spec:inputs`; GitLab 17.10+); `variables` maps to CI/CD
+variables. See
 [examples/renovate-runner.gitlab-ci.yml](examples/renovate-runner.gitlab-ci.yml)
 for the receiving pipeline. With the Redis store, running pipelines are
 re-adopted after a server restart.

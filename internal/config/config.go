@@ -117,6 +117,9 @@ type Executor struct {
 	Ref          string            `yaml:"ref"`
 	TriggerToken string            `yaml:"triggerToken"`
 	Variables    map[string]string `yaml:"variables"` // values are Go templates: {{ .Repo }} {{ .Platform }} {{ .Reason }}
+	// Inputs are passed as GitLab pipeline inputs (spec:inputs), not CI variables.
+	// Values are Go templates with the same fields as Variables. Requires GitLab 17.10+.
+	Inputs       map[string]string `yaml:"inputs"`
 	PollInterval time.Duration     `yaml:"pollInterval"`
 
 	// kubernetes
