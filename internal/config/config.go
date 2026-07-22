@@ -31,8 +31,11 @@ type Server struct {
 	MaxConcurrentRuns int           `yaml:"maxConcurrentRuns"`
 	RunTimeout        time.Duration `yaml:"runTimeout"`
 	// HistorySize is the number of finished runs kept for /api/v1/runs.
-	HistorySize int         `yaml:"historySize"`
-	Store       StoreConfig `yaml:"store"`
+	HistorySize int `yaml:"historySize"`
+	// APIToken enables the authenticated admin API (POST /api/v1/trigger)
+	// when set; requests must carry it as a bearer token.
+	APIToken string      `yaml:"apiToken"`
+	Store    StoreConfig `yaml:"store"`
 }
 
 // StoreConfig selects where repo run state lives.

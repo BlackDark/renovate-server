@@ -241,6 +241,7 @@ func run(configPath string) error {
 
 	// HTTP server.
 	srv := server.New(platforms, disp, st, hist, reg, m, log)
+	srv.SetAPIToken(cfg.Server.APIToken)
 	httpServer := &http.Server{
 		Addr:              cfg.Server.Listen,
 		Handler:           srv.Handler(),

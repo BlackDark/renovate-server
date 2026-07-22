@@ -72,6 +72,11 @@ func (g *GitHub) WebhookPath() string { return g.webhookPath }
 // Schedule returns the platform's cron configuration.
 func (g *GitHub) Schedule() config.Schedule { return g.schedule }
 
+// AllowsRepo reports whether the repo is inside the configured orgs.
+func (g *GitHub) AllowsRepo(fullName string) bool {
+	return platform.RepoAllowed(g.orgs, fullName)
+}
+
 // ParseWebhook verifies the HMAC signature and maps supported events
 // (edited PR/issue with newly checked boxes, default-branch push) to a
 // run request; unsupported or irrelevant events return (nil, nil).
