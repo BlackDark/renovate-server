@@ -62,6 +62,11 @@ YAML file, passed via `-config` (default `/etc/renovate-server/config.yaml`).
 variables abort startup. See [examples/config.yaml](examples/config.yaml) for
 a complete annotated example.
 
+`renovate-server -validate -config config.yaml` checks the file (env
+expansion, references, globs, crontabs) and exits 0/1 — useful as a CI step
+on the repo holding your config. Referenced env vars must be set (dummy
+values suffice).
+
 ### `server`
 
 | Key | Default | Description |
