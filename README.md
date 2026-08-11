@@ -98,7 +98,7 @@ values suffice).
 | `mrFilter.sourceBranchPrefixes` | no | Source-branch prefixes identifying Renovate MRs (default `["renovate/"]`) |
 | `mrFilter.authors` | no | MR/PR author usernames identifying Renovate MRs. GitHub: login from payload; GitLab: resolved via one cached API lookup per author |
 | `webhook.path` | yes | HTTP path the webhook is served on |
-| `webhook.secret` | yes | GitLab: `X-Gitlab-Token`; GitHub: HMAC secret |
+| `webhook.secret` | yes | GitLab: signing token (`whsec_…`, preferred) or legacy secret token; GitHub: HMAC secret |
 | `events` | no | Subset of `merge_request`, `issue`, `push` |
 | `discovery.groups` | for cron | Top groups (GitLab, incl. subgroups) or orgs (GitHub); also the webhook allowlist — events for repos outside are ignored (empty = allow all) |
 | `discovery.excludeArchived` | no | Skip archived repos during discovery |
@@ -149,7 +149,10 @@ required.
 ## Webhook setup
 
 **GitLab** (top group → Settings → Webhooks):
-- URL: `https://<server>/<webhook.path>`, Secret token: `webhook.secret`
+- URL: `https://<server>/<webhook.path>`
+- Auth (pick one; both supported):
+  - **Signing token** (recommended): generate in GitLab, set `webhook.secret` to the `whsec_…` value. When the secret starts with `whsec_` and `webhook-signature` is present, the server verifies the Standard Webhooks HMAC (5m timestamp skew).
+  - **Secret token** (legacy): set `webhook.secret` to any non-`whsec_` value; server checks `X-Gitlab-Token`. Spoofed signature headers are ignored in this mode.
 - Triggers: *Issues events*, *Merge request events*, optionally *Push events*
 
 **GitHub** (org → Settings → Webhooks):

@@ -4,13 +4,18 @@ package gitlab
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	gogitlab "gitlab.com/gitlab-org/api/client-go"
 
@@ -85,13 +90,16 @@ func (g *GitLab) AllowsRepo(fullName string) bool {
 	return platform.RepoAllowed(g.groups, fullName)
 }
 
-// ParseWebhook checks the X-Gitlab-Token and maps supported events (MR or
+// ParseWebhook authenticates the request then maps supported events (MR or
 // issue description edits with newly checked boxes, default-branch push)
 // to a run request; unsupported or irrelevant events return (nil, nil).
+//
+// Auth is dual-mode: when webhook-signature is present, verify the Standard
+// Webhooks HMAC (GitLab signing token). Otherwise fall back to the legacy
+// X-Gitlab-Token secret-token comparison.
 func (g *GitLab) ParseWebhook(r *http.Request, body []byte) (*platform.Event, error) {
-	token := r.Header.Get("X-Gitlab-Token")
-	if subtle.ConstantTimeCompare([]byte(token), []byte(g.secret)) != 1 {
-		return nil, platform.ErrUnauthorized
+	if err := g.authorizeWebhook(r, body); err != nil {
+		return nil, err
 	}
 
 	hook, err := gogitlab.ParseWebhook(gogitlab.WebhookEventType(r), body)
@@ -145,6 +153,61 @@ func (g *GitLab) ParseWebhook(r *http.Request, body []byte) (*platform.Event, er
 	default:
 		return nil, nil
 	}
+}
+
+// webhookTimestampTolerance rejects signed payloads older/newer than this
+// to limit replay of captured requests (GitLab / Standard Webhooks guidance).
+const webhookTimestampTolerance = 5 * time.Minute
+
+// authorizeWebhook verifies webhook-signature (Standard Webhooks / GitLab
+// signing token) when the configured secret is a whsec_ signing token and
+// the header is present; otherwise compares X-Gitlab-Token (legacy).
+// Spoofed signature headers on legacy secret-token setups are ignored so
+// they cannot force the HMAC path and DoS the endpoint.
+func (g *GitLab) authorizeWebhook(r *http.Request, body []byte) error {
+	sig := r.Header.Get("Webhook-Signature")
+	if sig != "" && strings.HasPrefix(g.secret, "whsec_") {
+		if !validWebhookSignature(g.secret, r.Header.Get("Webhook-Id"), r.Header.Get("Webhook-Timestamp"), sig, body) {
+			return platform.ErrUnauthorized
+		}
+		return nil
+	}
+	token := r.Header.Get("X-Gitlab-Token")
+	if subtle.ConstantTimeCompare([]byte(token), []byte(g.secret)) != 1 {
+		return platform.ErrUnauthorized
+	}
+	return nil
+}
+
+// validWebhookSignature checks a GitLab/Standard Webhooks HMAC-SHA256
+// signature. signingToken is the whsec_-prefixed key from webhook settings.
+func validWebhookSignature(signingToken, msgID, timestamp, signatures string, body []byte) bool {
+	ts, err := strconv.ParseInt(timestamp, 10, 64)
+	if err != nil {
+		return false
+	}
+	skew := time.Since(time.Unix(ts, 0))
+	if skew < 0 {
+		skew = -skew
+	}
+	if skew > webhookTimestampTolerance {
+		return false
+	}
+	rawKey, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(signingToken, "whsec_"))
+	if err != nil || len(rawKey) == 0 {
+		return false
+	}
+	mac := hmac.New(sha256.New, rawKey)
+	fmt.Fprintf(mac, "%s.%s.", msgID, timestamp)
+	mac.Write(body)
+	expected := "v1," + base64.StdEncoding.EncodeToString(mac.Sum(nil))
+	ok := false
+	for _, sig := range strings.Split(signatures, " ") {
+		if subtle.ConstantTimeCompare([]byte(expected), []byte(sig)) == 1 {
+			ok = true
+		}
+	}
+	return ok
 }
 
 // tickedPlain reports whether the number of checked todo items (of any
