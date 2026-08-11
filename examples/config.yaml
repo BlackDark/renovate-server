@@ -30,7 +30,8 @@ platforms:
     #   authors: [renovate-bot]
     webhook:
       path: /webhook/gitlab
-      secret: ${GITLAB_WEBHOOK_SECRET}
+      secret: ${GITLAB_WEBHOOK_SECRET}           # legacy X-Gitlab-Token
+      # signingSecret: ${GITLAB_WEBHOOK_SIGNING_SECRET}  # whsec_… (recommended)
     events: [merge_request, issue]   # add "push" to react to default-branch pushes
     discovery:
       groups: [my-top-group]

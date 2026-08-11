@@ -28,7 +28,8 @@ type GitLab struct {
 	name                string
 	client              *gogitlab.Client
 	webhookPath         string
-	secret              string
+	secret              string // legacy X-Gitlab-Token
+	signingSecret       string // Standard Webhooks whsec_ signing token
 	botEmail            string
 	dashboardIssueTitle string
 	allowAnyCheckbox    bool
@@ -60,6 +61,7 @@ func New(cfg config.Platform, log *slog.Logger) (*GitLab, error) {
 		client:              client,
 		webhookPath:         cfg.Webhook.Path,
 		secret:              cfg.Webhook.Secret,
+		signingSecret:       cfg.Webhook.SigningSecret,
 		botEmail:            cfg.BotEmail,
 		dashboardIssueTitle: cfg.DashboardIssueTitle,
 		allowAnyCheckbox:    cfg.AllowAnyCheckbox,
@@ -94,9 +96,9 @@ func (g *GitLab) AllowsRepo(fullName string) bool {
 // issue description edits with newly checked boxes, default-branch push)
 // to a run request; unsupported or irrelevant events return (nil, nil).
 //
-// Auth is dual-mode: when webhook-signature is present, verify the Standard
-// Webhooks HMAC (GitLab signing token). Otherwise fall back to the legacy
-// X-Gitlab-Token secret-token comparison.
+// Auth is dual-mode: when signingSecret is set and webhook-signature is
+// present, verify the Standard Webhooks HMAC. Otherwise fall back to the
+// legacy X-Gitlab-Token comparison against secret.
 func (g *GitLab) ParseWebhook(r *http.Request, body []byte) (*platform.Event, error) {
 	if err := g.authorizeWebhook(r, body); err != nil {
 		return nil, err
@@ -159,18 +161,20 @@ func (g *GitLab) ParseWebhook(r *http.Request, body []byte) (*platform.Event, er
 // to limit replay of captured requests (GitLab / Standard Webhooks guidance).
 const webhookTimestampTolerance = 5 * time.Minute
 
-// authorizeWebhook verifies webhook-signature (Standard Webhooks / GitLab
-// signing token) when the configured secret is a whsec_ signing token and
-// the header is present; otherwise compares X-Gitlab-Token (legacy).
-// Spoofed signature headers on legacy secret-token setups are ignored so
-// they cannot force the HMAC path and DoS the endpoint.
+// authorizeWebhook verifies webhook-signature when signingSecret is
+// configured and the header is present; otherwise compares X-Gitlab-Token
+// to secret (legacy). Spoofed signature headers without a configured
+// signingSecret are ignored so they cannot DoS legacy setups.
 func (g *GitLab) authorizeWebhook(r *http.Request, body []byte) error {
 	sig := r.Header.Get("Webhook-Signature")
-	if sig != "" && strings.HasPrefix(g.secret, "whsec_") {
-		if !validWebhookSignature(g.secret, r.Header.Get("Webhook-Id"), r.Header.Get("Webhook-Timestamp"), sig, body) {
+	if g.signingSecret != "" && sig != "" {
+		if !validWebhookSignature(g.signingSecret, r.Header.Get("Webhook-Id"), r.Header.Get("Webhook-Timestamp"), sig, body) {
 			return platform.ErrUnauthorized
 		}
 		return nil
+	}
+	if g.secret == "" {
+		return platform.ErrUnauthorized
 	}
 	token := r.Header.Get("X-Gitlab-Token")
 	if subtle.ConstantTimeCompare([]byte(token), []byte(g.secret)) != 1 {

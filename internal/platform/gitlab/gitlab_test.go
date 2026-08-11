@@ -195,7 +195,8 @@ func TestParseWebhookAuth(t *testing.T) {
 
 func TestParseWebhookSigningToken(t *testing.T) {
 	cfg := testConfig("https://gitlab.example.com")
-	cfg.Webhook.Secret = signingToken
+	cfg.Webhook.Secret = ""
+	cfg.Webhook.SigningSecret = signingToken
 	g, err := New(cfg, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
@@ -214,7 +215,7 @@ func TestParseWebhookSigningToken(t *testing.T) {
 
 func TestParseWebhookSigningTokenRejectsBadSig(t *testing.T) {
 	cfg := testConfig("https://gitlab.example.com")
-	cfg.Webhook.Secret = signingToken
+	cfg.Webhook.SigningSecret = signingToken
 	g, err := New(cfg, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
@@ -223,8 +224,8 @@ func TestParseWebhookSigningTokenRejectsBadSig(t *testing.T) {
 	ts := fmt.Sprintf("%d", time.Now().Unix())
 	r := signedWebhookRequest("Merge Request Hook", signingToken, "msg_1", ts, mrTicked)
 	r.Header.Set("Webhook-Signature", "v1,dG90YWxseWJvZ3Vz")
-	// Token that would pass legacy compare must NOT unlock a bad signature.
-	r.Header.Set("X-Gitlab-Token", signingToken)
+	// Matching legacy token must NOT unlock a bad signature when signingSecret is set.
+	r.Header.Set("X-Gitlab-Token", "s3cret")
 	_, err = g.ParseWebhook(r, []byte(mrTicked))
 	if !errors.Is(err, platform.ErrUnauthorized) {
 		t.Fatalf("want ErrUnauthorized (no token fallback), got %v", err)
@@ -233,7 +234,8 @@ func TestParseWebhookSigningTokenRejectsBadSig(t *testing.T) {
 
 func TestParseWebhookSigningTokenRejectsStaleTimestamp(t *testing.T) {
 	cfg := testConfig("https://gitlab.example.com")
-	cfg.Webhook.Secret = signingToken
+	cfg.Webhook.Secret = ""
+	cfg.Webhook.SigningSecret = signingToken
 	g, err := New(cfg, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
@@ -248,9 +250,9 @@ func TestParseWebhookSigningTokenRejectsStaleTimestamp(t *testing.T) {
 }
 
 func TestParseWebhookSigningTokenPrefersSignatureOverToken(t *testing.T) {
-	// Signature present + wrong X-Gitlab-Token: still OK if sig valid.
+	// Both secrets configured; valid sig + wrong X-Gitlab-Token still OK.
 	cfg := testConfig("https://gitlab.example.com")
-	cfg.Webhook.Secret = signingToken
+	cfg.Webhook.SigningSecret = signingToken
 	g, err := New(cfg, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
@@ -258,15 +260,30 @@ func TestParseWebhookSigningTokenPrefersSignatureOverToken(t *testing.T) {
 
 	ts := fmt.Sprintf("%d", time.Now().Unix())
 	r := signedWebhookRequest("Merge Request Hook", signingToken, "msg_2", ts, mrTicked)
-	r.Header.Set("X-Gitlab-Token", "not-the-signing-token")
+	r.Header.Set("X-Gitlab-Token", "not-the-secret")
 	got, err := g.ParseWebhook(r, []byte(mrTicked))
 	if err != nil || got == nil {
 		t.Fatalf("signature path must ignore token mismatch, got %+v, %v", got, err)
 	}
 }
 
+func TestParseWebhookDualSecretsFallsBackToToken(t *testing.T) {
+	// Both secrets set, no signature header → legacy token still works.
+	cfg := testConfig("https://gitlab.example.com")
+	cfg.Webhook.SigningSecret = signingToken
+	g, err := New(cfg, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := webhookRequest("Merge Request Hook", "s3cret", mrTicked)
+	got, err := g.ParseWebhook(r, []byte(mrTicked))
+	if err != nil || got == nil {
+		t.Fatalf("dual-secret token fallback failed: %+v, %v", got, err)
+	}
+}
+
 func TestParseWebhookFallsBackToSecretToken(t *testing.T) {
-	// No webhook-signature header → legacy X-Gitlab-Token still works.
+	// No signingSecret → legacy X-Gitlab-Token still works.
 	g := newTestPlatform(t, "https://gitlab.example.com")
 	r := webhookRequest("Merge Request Hook", "s3cret", mrTicked)
 	got, err := g.ParseWebhook(r, []byte(mrTicked))
@@ -276,7 +293,7 @@ func TestParseWebhookFallsBackToSecretToken(t *testing.T) {
 }
 
 func TestParseWebhookLegacyIgnoresSpoofedSignature(t *testing.T) {
-	// Legacy secret (no whsec_): forged webhook-signature must not block token auth.
+	// No signingSecret: forged webhook-signature must not block token auth.
 	g := newTestPlatform(t, "https://gitlab.example.com")
 	r := webhookRequest("Merge Request Hook", "s3cret", mrTicked)
 	r.Header.Set("Webhook-Signature", "v1,dG90YWxseWJvZ3Vz")

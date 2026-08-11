@@ -92,8 +92,9 @@ type MRFilter struct {
 
 // Webhook is the receiving endpoint for a platform's webhooks.
 type Webhook struct {
-	Path   string `yaml:"path"`
-	Secret string `yaml:"secret"`
+	Path          string `yaml:"path"`
+	Secret        string `yaml:"secret"`        // GitLab X-Gitlab-Token and/or GitHub HMAC secret
+	SigningSecret string `yaml:"signingSecret"` // GitLab Standard Webhooks signing token (whsec_…)
 }
 
 // Discovery controls which repos the cron schedule enumerates.
