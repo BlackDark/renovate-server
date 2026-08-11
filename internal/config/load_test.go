@@ -66,6 +66,23 @@ func TestLoadValidConfig(t *testing.T) {
 	}
 }
 
+func TestLoadGitLabSigningSecretOnly(t *testing.T) {
+	t.Setenv("TEST_GL_TOKEN", "glpat-abc")
+	t.Setenv("TEST_GL_SIGNING", "whsec_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+	content := strings.Replace(validConfig, "secret: ${TEST_GL_SECRET}",
+		"signingSecret: ${TEST_GL_SIGNING}", 1)
+	cfg, err := Load(writeConfig(t, content))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Platforms[0].Webhook.Secret != "" {
+		t.Errorf("secret = %q, want empty", cfg.Platforms[0].Webhook.Secret)
+	}
+	if cfg.Platforms[0].Webhook.SigningSecret != "whsec_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" {
+		t.Errorf("signingSecret not expanded: %q", cfg.Platforms[0].Webhook.SigningSecret)
+	}
+}
+
 func TestLoadDefaults(t *testing.T) {
 	t.Setenv("TEST_GL_TOKEN", "x")
 	t.Setenv("TEST_GL_SECRET", "y")
@@ -158,7 +175,17 @@ func TestValidationErrors(t *testing.T) {
 		}, "timezone"},
 		{"missing webhook secret", func(s string) string {
 			return strings.Replace(s, "secret: ${TEST_GL_SECRET}", "secret: \"\"", 1)
-		}, "webhook secret"},
+		}, "webhook secret or signingSecret"},
+		{"signingSecret without whsec_ prefix", func(s string) string {
+			return strings.Replace(s, "secret: ${TEST_GL_SECRET}",
+				"secret: \"\"\n      signingSecret: not-a-whsec", 1)
+		}, "signingSecret must start with whsec_"},
+		{"github rejects signingSecret", func(s string) string {
+			s = strings.Replace(s, "type: gitlab", "type: github", 1)
+			s = strings.Replace(s, "    baseURL: https://gitlab.example.com\n", "", 1)
+			return strings.Replace(s, "secret: ${TEST_GL_SECRET}",
+				"secret: ${TEST_GL_SECRET}\n      signingSecret: whsec_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", 1)
+		}, "signingSecret is only supported for gitlab"},
 		{"pipeline executor references unknown platform", func(s string) string {
 			return strings.Replace(s, "platform: gl\n", "platform: nope\n", 1)
 		}, `unknown platform "nope"`},

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
@@ -151,8 +152,21 @@ func (c *Config) validate() error {
 		if p.Webhook.Path == "" {
 			return fmt.Errorf("platform %q: webhook path is required", p.Name)
 		}
-		if p.Webhook.Secret == "" {
-			return fmt.Errorf("platform %q: webhook secret is required", p.Name)
+		switch p.Type {
+		case PlatformGitHub:
+			if p.Webhook.Secret == "" {
+				return fmt.Errorf("platform %q: webhook secret is required", p.Name)
+			}
+			if p.Webhook.SigningSecret != "" {
+				return fmt.Errorf("platform %q: webhook signingSecret is only supported for gitlab", p.Name)
+			}
+		case PlatformGitLab:
+			if p.Webhook.Secret == "" && p.Webhook.SigningSecret == "" {
+				return fmt.Errorf("platform %q: webhook secret or signingSecret is required", p.Name)
+			}
+			if p.Webhook.SigningSecret != "" && !strings.HasPrefix(p.Webhook.SigningSecret, "whsec_") {
+				return fmt.Errorf("platform %q: webhook signingSecret must start with whsec_", p.Name)
+			}
 		}
 		for _, ev := range p.Events {
 			switch ev {

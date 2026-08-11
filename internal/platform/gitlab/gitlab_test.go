@@ -2,6 +2,9 @@ package gitlab
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -10,6 +13,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/BlackDark/renovate-server/internal/config"
 	"github.com/BlackDark/renovate-server/internal/platform"
@@ -46,6 +50,29 @@ func webhookRequest(eventType, token, body string) *http.Request {
 	r := httptest.NewRequest(http.MethodPost, "/webhook/gitlab", bytes.NewBufferString(body))
 	r.Header.Set("X-Gitlab-Event", eventType)
 	r.Header.Set("X-Gitlab-Token", token)
+	return r
+}
+
+// signingToken is a fixed whsec_ key for tests (32 zero bytes, base64).
+const signingToken = "whsec_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
+func signWebhook(signingToken, id, timestamp string, body []byte) string {
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(signingToken, "whsec_"))
+	if err != nil {
+		panic(err)
+	}
+	mac := hmac.New(sha256.New, raw)
+	mac.Write([]byte(id + "." + timestamp + "."))
+	mac.Write(body)
+	return "v1," + base64.StdEncoding.EncodeToString(mac.Sum(nil))
+}
+
+func signedWebhookRequest(eventType, signingToken, id, timestamp, body string) *http.Request {
+	r := httptest.NewRequest(http.MethodPost, "/webhook/gitlab", bytes.NewBufferString(body))
+	r.Header.Set("X-Gitlab-Event", eventType)
+	r.Header.Set("Webhook-Id", id)
+	r.Header.Set("Webhook-Timestamp", timestamp)
+	r.Header.Set("Webhook-Signature", signWebhook(signingToken, id, timestamp, []byte(body)))
 	return r
 }
 
@@ -163,6 +190,116 @@ func TestParseWebhookAuth(t *testing.T) {
 	_, err := g.ParseWebhook(r, []byte(mrTicked))
 	if !errors.Is(err, platform.ErrUnauthorized) {
 		t.Fatalf("want ErrUnauthorized, got %v", err)
+	}
+}
+
+func TestParseWebhookSigningToken(t *testing.T) {
+	cfg := testConfig("https://gitlab.example.com")
+	cfg.Webhook.Secret = ""
+	cfg.Webhook.SigningSecret = signingToken
+	g, err := New(cfg, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ts := fmt.Sprintf("%d", time.Now().Unix())
+	r := signedWebhookRequest("Merge Request Hook", signingToken, "msg_1", ts, mrTicked)
+	got, err := g.ParseWebhook(r, []byte(mrTicked))
+	if err != nil {
+		t.Fatalf("valid signature: %v", err)
+	}
+	if got == nil {
+		t.Fatal("valid signature should yield event")
+	}
+}
+
+func TestParseWebhookSigningTokenRejectsBadSig(t *testing.T) {
+	cfg := testConfig("https://gitlab.example.com")
+	cfg.Webhook.SigningSecret = signingToken
+	g, err := New(cfg, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ts := fmt.Sprintf("%d", time.Now().Unix())
+	r := signedWebhookRequest("Merge Request Hook", signingToken, "msg_1", ts, mrTicked)
+	r.Header.Set("Webhook-Signature", "v1,dG90YWxseWJvZ3Vz")
+	// Matching legacy token must NOT unlock a bad signature when signingSecret is set.
+	r.Header.Set("X-Gitlab-Token", "s3cret")
+	_, err = g.ParseWebhook(r, []byte(mrTicked))
+	if !errors.Is(err, platform.ErrUnauthorized) {
+		t.Fatalf("want ErrUnauthorized (no token fallback), got %v", err)
+	}
+}
+
+func TestParseWebhookSigningTokenRejectsStaleTimestamp(t *testing.T) {
+	cfg := testConfig("https://gitlab.example.com")
+	cfg.Webhook.Secret = ""
+	cfg.Webhook.SigningSecret = signingToken
+	g, err := New(cfg, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stale := fmt.Sprintf("%d", time.Now().Add(-10*time.Minute).Unix())
+	r := signedWebhookRequest("Merge Request Hook", signingToken, "msg_stale", stale, mrTicked)
+	_, err = g.ParseWebhook(r, []byte(mrTicked))
+	if !errors.Is(err, platform.ErrUnauthorized) {
+		t.Fatalf("want ErrUnauthorized for stale timestamp, got %v", err)
+	}
+}
+
+func TestParseWebhookSigningTokenPrefersSignatureOverToken(t *testing.T) {
+	// Both secrets configured; valid sig + wrong X-Gitlab-Token still OK.
+	cfg := testConfig("https://gitlab.example.com")
+	cfg.Webhook.SigningSecret = signingToken
+	g, err := New(cfg, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ts := fmt.Sprintf("%d", time.Now().Unix())
+	r := signedWebhookRequest("Merge Request Hook", signingToken, "msg_2", ts, mrTicked)
+	r.Header.Set("X-Gitlab-Token", "not-the-secret")
+	got, err := g.ParseWebhook(r, []byte(mrTicked))
+	if err != nil || got == nil {
+		t.Fatalf("signature path must ignore token mismatch, got %+v, %v", got, err)
+	}
+}
+
+func TestParseWebhookDualSecretsFallsBackToToken(t *testing.T) {
+	// Both secrets set, no signature header → legacy token still works.
+	cfg := testConfig("https://gitlab.example.com")
+	cfg.Webhook.SigningSecret = signingToken
+	g, err := New(cfg, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := webhookRequest("Merge Request Hook", "s3cret", mrTicked)
+	got, err := g.ParseWebhook(r, []byte(mrTicked))
+	if err != nil || got == nil {
+		t.Fatalf("dual-secret token fallback failed: %+v, %v", got, err)
+	}
+}
+
+func TestParseWebhookFallsBackToSecretToken(t *testing.T) {
+	// No signingSecret → legacy X-Gitlab-Token still works.
+	g := newTestPlatform(t, "https://gitlab.example.com")
+	r := webhookRequest("Merge Request Hook", "s3cret", mrTicked)
+	got, err := g.ParseWebhook(r, []byte(mrTicked))
+	if err != nil || got == nil {
+		t.Fatalf("secret-token fallback failed: %+v, %v", got, err)
+	}
+}
+
+func TestParseWebhookLegacyIgnoresSpoofedSignature(t *testing.T) {
+	// No signingSecret: forged webhook-signature must not block token auth.
+	g := newTestPlatform(t, "https://gitlab.example.com")
+	r := webhookRequest("Merge Request Hook", "s3cret", mrTicked)
+	r.Header.Set("Webhook-Signature", "v1,dG90YWxseWJvZ3Vz")
+	got, err := g.ParseWebhook(r, []byte(mrTicked))
+	if err != nil || got == nil {
+		t.Fatalf("legacy token auth must ignore spoofed signature: %+v, %v", got, err)
 	}
 }
 
