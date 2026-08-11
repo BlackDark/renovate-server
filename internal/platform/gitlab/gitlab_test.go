@@ -62,7 +62,7 @@ func signWebhook(signingToken, id, timestamp string, body []byte) string {
 		panic(err)
 	}
 	mac := hmac.New(sha256.New, raw)
-	fmt.Fprintf(mac, "%s.%s.", id, timestamp)
+	mac.Write([]byte(id + "." + timestamp + "."))
 	mac.Write(body)
 	return "v1," + base64.StdEncoding.EncodeToString(mac.Sum(nil))
 }

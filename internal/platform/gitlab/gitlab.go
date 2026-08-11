@@ -198,7 +198,7 @@ func validWebhookSignature(signingToken, msgID, timestamp, signatures string, bo
 		return false
 	}
 	mac := hmac.New(sha256.New, rawKey)
-	fmt.Fprintf(mac, "%s.%s.", msgID, timestamp)
+	mac.Write([]byte(msgID + "." + timestamp + "."))
 	mac.Write(body)
 	expected := "v1," + base64.StdEncoding.EncodeToString(mac.Sum(nil))
 	ok := false
