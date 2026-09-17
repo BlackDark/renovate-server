@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	gogitlab "gitlab.com/gitlab-org/api/client-go"
+	gogitlab "gitlab.com/gitlab-org/api/client-go/v3"
 
 	"github.com/BlackDark/renovate-server/internal/config"
 	"github.com/BlackDark/renovate-server/internal/platform"
@@ -263,7 +263,7 @@ func (g *GitLab) authorUsername(ctx context.Context, id int64) string {
 	if ok {
 		return name
 	}
-	user, _, err := g.client.Users.GetUser(id, gogitlab.GetUsersOptions{}, gogitlab.WithContext(ctx))
+	user, _, err := g.client.Users.GetUser(id, nil, gogitlab.WithContext(ctx))
 	if err != nil {
 		g.log.Warn("author lookup failed", "authorId", id, "error", err)
 		return ""
@@ -292,10 +292,10 @@ func (g *GitLab) DiscoverRepos(ctx context.Context) ([]platform.Repo, error) {
 	for _, group := range g.groups {
 		opt := &gogitlab.ListGroupProjectsOptions{
 			ListOptions:      gogitlab.ListOptions{PerPage: 100},
-			IncludeSubGroups: gogitlab.Ptr(true),
+			IncludeSubGroups: new(true),
 		}
 		if g.excludeArchived {
-			opt.Archived = gogitlab.Ptr(false)
+			opt.Archived = new(false)
 		}
 		for {
 			projects, resp, err := g.client.Groups.ListGroupProjects(group, opt, gogitlab.WithContext(ctx))

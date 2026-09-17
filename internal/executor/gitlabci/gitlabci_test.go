@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	gogitlab "gitlab.com/gitlab-org/api/client-go"
+	gogitlab "gitlab.com/gitlab-org/api/client-go/v3"
 
 	"github.com/BlackDark/renovate-server/internal/config"
 	"github.com/BlackDark/renovate-server/internal/executor"

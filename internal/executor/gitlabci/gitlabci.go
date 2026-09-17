@@ -11,7 +11,7 @@ import (
 	"text/template"
 	"time"
 
-	gogitlab "gitlab.com/gitlab-org/api/client-go"
+	gogitlab "gitlab.com/gitlab-org/api/client-go/v3"
 
 	"github.com/BlackDark/renovate-server/internal/config"
 	"github.com/BlackDark/renovate-server/internal/executor"
@@ -122,8 +122,8 @@ func (e *Executor) Run(ctx context.Context, spec executor.RunSpec) error {
 
 	pipeline, _, err := e.client.PipelineTriggers.RunPipelineTrigger(e.project,
 		&gogitlab.RunPipelineTriggerOptions{
-			Ref:       gogitlab.Ptr(e.ref),
-			Token:     gogitlab.Ptr(e.triggerToken),
+			Ref:       new(e.ref),
+			Token:     new(e.triggerToken),
 			Variables: vars,
 			Inputs:    inputs,
 		}, gogitlab.WithContext(ctx))
