@@ -1,6 +1,7 @@
 package store
 
 import (
+	"maps"
 	"sync"
 	"time"
 )
@@ -81,9 +82,7 @@ func (m *memory) LoadRunHandles() map[string]string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	out := make(map[string]string, len(m.handles))
-	for k, v := range m.handles {
-		out[k] = v
-	}
+	maps.Copy(out, m.handles)
 	return out
 }
 

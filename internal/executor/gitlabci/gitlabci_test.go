@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	gogitlab "gitlab.com/gitlab-org/api/client-go"
+	gogitlab "gitlab.com/gitlab-org/api/client-go/v3"
 
 	"github.com/BlackDark/renovate-server/internal/config"
 	"github.com/BlackDark/renovate-server/internal/executor"
@@ -93,9 +94,7 @@ func (f *fakeHandles) LoadRunHandles() map[string]string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	out := map[string]string{}
-	for k, v := range f.saved {
-		out[k] = v
-	}
+	maps.Copy(out, f.saved)
 	return out
 }
 

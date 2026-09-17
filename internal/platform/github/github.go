@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"slices"
 
-	gogithub "github.com/google/go-github/v76/github"
+	gogithub "github.com/google/go-github/v92/github"
 
 	"github.com/BlackDark/renovate-server/internal/config"
 	"github.com/BlackDark/renovate-server/internal/platform"
@@ -34,13 +34,13 @@ type GitHub struct {
 
 // New builds a GitHub adapter from its platform config section.
 func New(cfg config.Platform, log *slog.Logger) (*GitHub, error) {
-	client := gogithub.NewClient(nil).WithAuthToken(cfg.Token)
+	opts := []gogithub.ClientOptionsFunc{gogithub.WithAuthToken(cfg.Token)}
 	if cfg.BaseURL != "" && cfg.BaseURL != "https://github.com" {
-		var err error
-		client, err = client.WithEnterpriseURLs(cfg.BaseURL, cfg.BaseURL)
-		if err != nil {
-			return nil, fmt.Errorf("create github enterprise client: %w", err)
-		}
+		opts = append(opts, gogithub.WithEnterpriseURLs(cfg.BaseURL, cfg.BaseURL))
+	}
+	client, err := gogithub.NewClient(opts...)
+	if err != nil {
+		return nil, fmt.Errorf("create github client: %w", err)
 	}
 	events := make(map[string]bool, len(cfg.Events))
 	for _, e := range cfg.Events {
@@ -197,7 +197,7 @@ func (g *GitHub) DiscoverRepos(ctx context.Context) ([]platform.Repo, error) {
 	var repos []platform.Repo
 	for _, org := range g.orgs {
 		opt := &gogithub.RepositoryListByOrgOptions{
-			ListOptions: gogithub.ListOptions{PerPage: 100},
+			PerPage: 100,
 		}
 		for {
 			page, resp, err := g.client.Repositories.ListByOrg(ctx, org, opt)

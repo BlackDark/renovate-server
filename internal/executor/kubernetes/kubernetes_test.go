@@ -211,7 +211,7 @@ func TestAdoptRunning(t *testing.T) {
 	active := jobFixture("renovate-abc-1", "top-group/app", "gl")
 	finished := jobFixture("renovate-def-2", "top-group/done", "gl")
 	finished.Status.Succeeded = 1
-	foreign := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "other", Namespace: "renovate"}}
+	foreign := &batchv1.Job{Name: "other", Namespace: "renovate"}
 	for _, j := range []*batchv1.Job{active, finished, foreign} {
 		if _, err := client.BatchV1().Jobs("renovate").Create(t.Context(), j, metav1.CreateOptions{}); err != nil {
 			t.Fatal(err)
@@ -249,15 +249,13 @@ func TestAdoptRunning(t *testing.T) {
 
 func jobFixture(name, repo, platformName string) *batchv1.Job {
 	return &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: "renovate",
-			Labels:    map[string]string{"app.kubernetes.io/managed-by": "renovate-server"},
-			Annotations: map[string]string{
-				"renovate-server.io/repo":     repo,
-				"renovate-server.io/platform": platformName,
-				"renovate-server.io/reason":   "push",
-			},
+		Name:      name,
+		Namespace: "renovate",
+		Labels:    map[string]string{"app.kubernetes.io/managed-by": "renovate-server"},
+		Annotations: map[string]string{
+			"renovate-server.io/repo":     repo,
+			"renovate-server.io/platform": platformName,
+			"renovate-server.io/reason":   "push",
 		},
 		Spec: batchv1.JobSpec{
 			Template: corev1.PodTemplateSpec{

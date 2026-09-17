@@ -93,15 +93,13 @@ func testStoreSemantics(t *testing.T, s Store) {
 	t.Run("concurrent access", func(t *testing.T) {
 		var wg sync.WaitGroup
 		for range 50 {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				if s.Queue("gl:x", "push") == Queued {
 					s.StartRun("gl:x")
 					s.FinishRun("gl:x")
 				}
 				s.Snapshot()
-			}()
+			})
 		}
 		wg.Wait()
 		s.FinishRun("gl:x")

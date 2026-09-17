@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	gogitlab "gitlab.com/gitlab-org/api/client-go"
+	gogitlab "gitlab.com/gitlab-org/api/client-go/v3"
 
 	"github.com/BlackDark/renovate-server/internal/config"
 	"github.com/BlackDark/renovate-server/internal/platform"
@@ -206,7 +206,7 @@ func validWebhookSignature(signingToken, msgID, timestamp, signatures string, bo
 	mac.Write(body)
 	expected := "v1," + base64.StdEncoding.EncodeToString(mac.Sum(nil))
 	ok := false
-	for _, sig := range strings.Split(signatures, " ") {
+	for sig := range strings.SplitSeq(signatures, " ") {
 		if subtle.ConstantTimeCompare([]byte(expected), []byte(sig)) == 1 {
 			ok = true
 		}
@@ -263,7 +263,7 @@ func (g *GitLab) authorUsername(ctx context.Context, id int64) string {
 	if ok {
 		return name
 	}
-	user, _, err := g.client.Users.GetUser(id, gogitlab.GetUsersOptions{}, gogitlab.WithContext(ctx))
+	user, _, err := g.client.Users.GetUser(id, nil, gogitlab.WithContext(ctx))
 	if err != nil {
 		g.log.Warn("author lookup failed", "authorId", id, "error", err)
 		return ""
@@ -291,11 +291,11 @@ func (g *GitLab) DiscoverRepos(ctx context.Context) ([]platform.Repo, error) {
 	var repos []platform.Repo
 	for _, group := range g.groups {
 		opt := &gogitlab.ListGroupProjectsOptions{
-			ListOptions:      gogitlab.ListOptions{PerPage: 100},
-			IncludeSubGroups: gogitlab.Ptr(true),
+			PerPage:          100,
+			IncludeSubGroups: new(true),
 		}
 		if g.excludeArchived {
-			opt.Archived = gogitlab.Ptr(false)
+			opt.Archived = new(false)
 		}
 		for {
 			projects, resp, err := g.client.Groups.ListGroupProjects(group, opt, gogitlab.WithContext(ctx))
