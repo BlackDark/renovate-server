@@ -102,8 +102,7 @@ func (d *Dispatcher) Enqueue(ev platform.Event) {
 	switch d.store.Queue(ev.Repo.Key(), string(ev.Reason)) {
 	case store.Queued:
 		log.Info("run queued")
-		d.wg.Add(1)
-		go d.run(ev, route.Executor)
+		d.wg.Go(func() { d.run(ev, route.Executor) })
 	case store.Coalesced:
 		log.Debug("event coalesced into queued run")
 	case store.Deferred:
@@ -118,20 +117,16 @@ func (d *Dispatcher) Adopt(run executor.AdoptedRun, executorName string) {
 	key := run.Repo.Key()
 	d.store.Adopt(key, string(platform.ReasonRerun))
 	d.opts.Log.Info("adopted in-flight run", "repo", key, "executor", executorName)
-	d.wg.Add(1)
-	go func() {
-		defer d.wg.Done()
+	d.wg.Go(func() {
 		ctx, cancel := context.WithTimeout(d.baseCtx, d.opts.RunTimeout)
 		defer cancel()
 		start := time.Now()
 		err := run.Wait(ctx)
 		d.finish(run.Repo, "adopted", executorName, start, err)
-	}()
+	})
 }
 
 func (d *Dispatcher) run(ev platform.Event, exec executor.Executor) {
-	defer d.wg.Done()
-
 	select {
 	case <-time.After(d.opts.Debounce):
 	case <-d.baseCtx.Done():

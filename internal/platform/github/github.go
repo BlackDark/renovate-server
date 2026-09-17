@@ -197,7 +197,7 @@ func (g *GitHub) DiscoverRepos(ctx context.Context) ([]platform.Repo, error) {
 	var repos []platform.Repo
 	for _, org := range g.orgs {
 		opt := &gogithub.RepositoryListByOrgOptions{
-			ListOptions: gogithub.ListOptions{PerPage: 100},
+			PerPage: 100,
 		}
 		for {
 			page, resp, err := g.client.Repositories.ListByOrg(ctx, org, opt)

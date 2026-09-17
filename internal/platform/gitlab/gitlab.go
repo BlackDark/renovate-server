@@ -206,7 +206,7 @@ func validWebhookSignature(signingToken, msgID, timestamp, signatures string, bo
 	mac.Write(body)
 	expected := "v1," + base64.StdEncoding.EncodeToString(mac.Sum(nil))
 	ok := false
-	for _, sig := range strings.Split(signatures, " ") {
+	for sig := range strings.SplitSeq(signatures, " ") {
 		if subtle.ConstantTimeCompare([]byte(expected), []byte(sig)) == 1 {
 			ok = true
 		}
@@ -291,7 +291,7 @@ func (g *GitLab) DiscoverRepos(ctx context.Context) ([]platform.Repo, error) {
 	var repos []platform.Repo
 	for _, group := range g.groups {
 		opt := &gogitlab.ListGroupProjectsOptions{
-			ListOptions:      gogitlab.ListOptions{PerPage: 100},
+			PerPage:          100,
 			IncludeSubGroups: new(true),
 		}
 		if g.excludeArchived {

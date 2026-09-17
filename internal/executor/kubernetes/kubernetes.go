@@ -178,10 +178,8 @@ func (e *Executor) buildJob(spec executor.RunSpec) *batchv1.Job {
 	var mounts []corev1.VolumeMount
 	if e.cachePVC != "" {
 		volumes = append(volumes, corev1.Volume{
-			Name: "cache",
-			VolumeSource: corev1.VolumeSource{
-				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: e.cachePVC},
-			},
+			Name:                  "cache",
+			PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: e.cachePVC},
 		})
 		mounts = append(mounts, corev1.VolumeMount{Name: "cache", MountPath: cacheMountPath})
 	}
@@ -210,27 +208,23 @@ func (e *Executor) buildJob(spec executor.RunSpec) *batchv1.Job {
 	}
 
 	return &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: e.namespace,
-			Labels: map[string]string{
-				labelManagedBy: labelManagedByVal,
-				labelRepoHash:  hash,
-			},
-			Annotations: map[string]string{
-				annotationRepo:     spec.Repo.FullName,
-				annotationPlatform: spec.Repo.Platform,
-				annotationReason:   string(spec.Reason),
-			},
+		Name:      name,
+		Namespace: e.namespace,
+		Labels: map[string]string{
+			labelManagedBy: labelManagedByVal,
+			labelRepoHash:  hash,
+		},
+		Annotations: map[string]string{
+			annotationRepo:     spec.Repo.FullName,
+			annotationPlatform: spec.Repo.Platform,
+			annotationReason:   string(spec.Reason),
 		},
 		Spec: batchv1.JobSpec{
 			BackoffLimit:            &backoffLimit,
 			TTLSecondsAfterFinished: &ttl,
 			ActiveDeadlineSeconds:   activeDeadline,
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{labelManagedBy: labelManagedByVal},
-				},
+				Labels: map[string]string{labelManagedBy: labelManagedByVal},
 				Spec: corev1.PodSpec{
 					RestartPolicy:      corev1.RestartPolicyNever,
 					ServiceAccountName: e.pod.ServiceAccountName,

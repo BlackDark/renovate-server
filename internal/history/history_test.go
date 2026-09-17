@@ -43,8 +43,10 @@ func TestConcurrentRecord(t *testing.T) {
 	h := New(8)
 	var wg sync.WaitGroup
 	for i := range 32 {
-		wg.Add(1)
-		go func() { defer wg.Done(); h.Record(Entry{Repo: strconv.Itoa(i)}); h.Entries() }()
+		wg.Go(func() {
+			h.Record(Entry{Repo: strconv.Itoa(i)})
+			h.Entries()
+		})
 	}
 	wg.Wait()
 	if len(h.Entries()) != 8 {
