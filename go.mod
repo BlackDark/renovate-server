@@ -3,7 +3,7 @@ module github.com/BlackDark/renovate-server
 go 1.27.1
 
 require (
-	github.com/alicebob/miniredis/v2 v2.39.0
+	github.com/alicebob/miniredis/v2 v2.40.0
 	github.com/bmatcuk/doublestar/v4 v4.10.4
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/google/go-github/v92 v92.0.0
