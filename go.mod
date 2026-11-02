@@ -13,9 +13,9 @@ require (
 	github.com/robfig/cron/v3 v3.0.1
 	gitlab.com/gitlab-org/api/client-go/v3 v3.39.1
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/api v0.37.1
-	k8s.io/apimachinery v0.37.1
-	k8s.io/client-go v0.37.1
+	k8s.io/api v0.37.2
+	k8s.io/apimachinery v0.37.2
+	k8s.io/client-go v0.37.2
 )
 
 require (
