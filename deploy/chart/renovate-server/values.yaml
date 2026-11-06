@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/blackdark/renovate-server
-  tag: ""            # defaults to appVersion
+  tag: "@sha256:a83ac52b213a93b72cbb4ad0e4f440f1f9083ab007e306cdf6597353c5946c16"            # defaults to appVersion
   pullPolicy: IfNotPresent
 
 # In-memory store: keep 1 replica.
