@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"slices"
 
-	gogithub "github.com/google/go-github/v92/github"
+	gogithub "github.com/google/go-github/v93/github"
 
 	"github.com/BlackDark/renovate-server/internal/config"
 	"github.com/BlackDark/renovate-server/internal/platform"
