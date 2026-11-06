@@ -2,4 +2,12 @@
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["github>blackdark/renovate-base//default.json5", ":pinVersions"],
   postUpdateOptions: ["gomodTidy"],
+  packageRules: [
+    {
+      // deployment.yaml renders `repository:tag`. A digest in image.tag is not a valid image ref.
+      description: "Chart image tag is not a digest field",
+      matchFileNames: ["deploy/chart/renovate-server/values.yaml"],
+      pinDigests: false,
+    },
+  ],
 }
