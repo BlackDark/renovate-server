@@ -2,6 +2,7 @@
 /dist/
 coverage.out
 *.test
+mise.local.toml
 
 # local scratch files with raw payloads from private instances
 /gitlab-*.md
