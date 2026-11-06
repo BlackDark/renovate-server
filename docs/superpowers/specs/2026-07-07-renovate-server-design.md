@@ -1,3 +1,5 @@
+> Historical design. Current checks and layout: [AGENTS.md](../../../AGENTS.md).
+
 # Renovate Server — Design Spec
 
 Date: 2026-07-07
