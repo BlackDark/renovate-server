@@ -219,8 +219,8 @@ func run(configPath string) error {
 	}
 	sched.Start()
 
-	// SIGHUP reloads rules and log level. Platform/executor changes need a
-	// restart: refusing them here avoids half-applied configurations.
+	// SIGHUP reloads rules and log level. Platforms, executors and the listen
+	// address need a restart: refusing them here avoids a half-applied process.
 	hup := make(chan os.Signal, 1)
 	signal.Notify(hup, syscall.SIGHUP)
 	go func() {
@@ -230,8 +230,8 @@ func run(configPath string) error {
 				log.Error("config reload failed, keeping old config", "error", err)
 				continue
 			}
-			if !reflect.DeepEqual(newCfg.Platforms, cfg.Platforms) || !reflect.DeepEqual(newCfg.Executors, cfg.Executors) {
-				log.Error("platforms/executors changed: reload refused, restart required")
+			if reloadRefused(cfg, newCfg) {
+				log.Error("platforms, executors, or listen address changed: reload refused, restart required")
 				continue
 			}
 			newRouter, err := dispatch.NewRouter(newCfg.Rules, executors)
@@ -282,6 +282,15 @@ func run(configPath string) error {
 		log.Warn("runs still in flight at shutdown", "error", err)
 	}
 	return nil
+}
+
+// reloadRefused reports whether SIGHUP must keep the running config.
+// Platforms, executors and the listen address are fixed at process start.
+func reloadRefused(old, next *config.Config) bool {
+	if old.Server.Listen != next.Server.Listen {
+		return true
+	}
+	return !reflect.DeepEqual(old.Platforms, next.Platforms) || !reflect.DeepEqual(old.Executors, next.Executors)
 }
 
 func newLogger(cfg config.Log) (*slog.Logger, *slog.LevelVar, error) {
