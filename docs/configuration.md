@@ -74,7 +74,7 @@ Pod customization via `pod:`: `resources.requests`/`resources.limits`
 (quantity strings, validated at startup), `nodeSelector`, `tolerations`
 (`key`/`operator`/`value`/`effect`), `serviceAccountName`,
 `imagePullSecrets` (names), `activeDeadlineSeconds` (cluster-side kill
-switch; the server's `runTimeout` stays authoritative for the repo lock).
+switch; the server's `runTimeout` stays authoritative for the repo lock). A timed-out run releases the lock and leaves the Job running, so set `pod.activeDeadlineSeconds` when the cluster should stop it.
 
 **docker** — `image`, optional `cacheVolume` (mounted at
 `/tmp/renovate/cache`), `pull` (pull image before each run), `env`.
@@ -94,7 +94,7 @@ required.
 
 **GitLab** (top group → Settings → Webhooks):
 
-- URL: `https://<server>/<webhook.path>`
+- URL: `https://<server><webhook.path>` (`webhook.path` already starts with `/`)
 - Auth (set one or both):
   - **Signing token** (recommended): generate in GitLab, set `webhook.signingSecret` to the `whsec_…` value. When `webhook-signature` is present, server verifies Standard Webhooks HMAC (5m timestamp skew).
   - **Secret token** (legacy): set `webhook.secret`; server checks `X-Gitlab-Token` when no signature header is verified.
@@ -152,7 +152,7 @@ attestations; release archives include SPDX SBOMs. Verify an image with:
 
 ```sh
 cosign verify \
-  --certificate-identity-regexp 'github.com/BlackDark/renovate-server' \
+  --certificate-identity-regexp '^https://github\.com/BlackDark/renovate-server/\.github/workflows/release\.yml@' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   ghcr.io/blackdark/renovate-server:<version>
 ```
@@ -160,8 +160,7 @@ cosign verify \
 Install the Helm chart straight from ghcr:
 
 ```sh
-helm install renovate-server oci://ghcr.io/blackdark/charts/renovate-server --version <version>
+helm install renovate-server oci://ghcr.io/blackdark/charts/renovate-server --version <version> -f values.yaml
 ```
 
-The chart version committed in git is a placeholder. The release workflow
-packages it with the git tag as `--version` and `--app-version`.
+`config` in that values file is the server config and needs at least one platform. Reference token Secrets from `envFrom`. The chart version committed in git is a placeholder. The release workflow packages it with the git tag as `--version` and `--app-version`.

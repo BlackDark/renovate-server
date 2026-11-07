@@ -16,10 +16,10 @@ One process takes the webhooks and the cron, and starts each run somewhere else:
 
 Per-repo Renovate CI duplicates config, and two events for the same repo (a dashboard checkbox and a push) start two runs that fight over the same branches.
 
-- **One webhook for the whole group**: a GitLab group webhook or a GitHub org webhook covers every project underneath. Repos outside `discovery.groups` are ignored.
+- **One webhook for the whole group**: a GitLab group webhook or a GitHub org webhook covers every project underneath. Repos outside a non-empty `discovery.groups` are ignored. An empty list allows every repo.
 - **One run per repo**: events that arrive during a run collapse into a single follow-up. A debounce window turns a burst into one execution.
 - **Pick the runner per repo**: glob rules send each project to a central GitLab pipeline, a Kubernetes Job, or Docker. A `noop` executor lets you watch real traffic before switching a rule on.
-- **Runs survive a restart** when you point the store at Redis. The default memory store needs nothing else.
+- **Redis keeps the queue** and an in-flight GitLab pipeline across a restart. A Docker run does not resume. The memory store is the default.
 
 ## Install
 
@@ -32,11 +32,13 @@ docker run -d --name renovate-server \
   ghcr.io/blackdark/renovate-server:latest
 ```
 
-The server listens on port 8080. Point the group or org webhook at `https://<host>/<webhook.path>`. Compose file: [examples/docker-compose.yaml](examples/docker-compose.yaml). Kubernetes: the [Helm chart](deploy/chart/renovate-server).
+The server listens on port 8080. Point the group or org webhook at `https://<host><webhook.path>` (`webhook.path` already starts with `/`). Compose file: [examples/docker-compose.yaml](examples/docker-compose.yaml). Kubernetes: the [Helm chart](deploy/chart/renovate-server).
 
 ```sh
-helm install renovate-server oci://ghcr.io/blackdark/charts/renovate-server --version <version>
+helm install renovate-server oci://ghcr.io/blackdark/charts/renovate-server --version <version> -f values.yaml
 ```
+
+`values.yaml` `config` is the server config and needs at least one platform ([examples/config.yaml](examples/config.yaml)). Put tokens in a Secret and list it under `envFrom`.
 
 Full config, webhook setup, caching and metrics: [docs/configuration.md](docs/configuration.md).
 
@@ -45,7 +47,7 @@ Full config, webhook setup, caching and metrics: [docs/configuration.md](docs/co
 ### Triggers
 
 - **Checkbox ticks** on a Renovate merge request or the Dependency Dashboard issue start a run. Human task lists do not.
-- **Pushes to the default branch** are optional, and Renovate's own commits are skipped.
+- **Pushes to the default branch** are optional. Set `botEmail` to the address on Renovate's commits, or those pushes start another run.
 - **Cron** lists every project in the configured groups and runs each one through the same path as a webhook.
 
 ### Executors
@@ -69,7 +71,7 @@ No. It decides that a repo should run, takes a lock, and hands the repo to an ex
 
 ### Can one GitLab webhook cover every project?
 
-Yes. Put the webhook on the top group. Subgroups and projects are included. `discovery.groups` is also the allowlist: events for other repos are dropped.
+Yes. Put the webhook on the top group. Subgroups and projects are included. A non-empty `discovery.groups` is the allowlist: events for other repos are dropped. An empty list allows every repo.
 
 ### Does it need Redis?
 
@@ -77,7 +79,7 @@ No. The memory store is the default. Queued runs are lost on restart; the next w
 
 ### How do I check a config file before deploying it?
 
-`renovate-server -validate -config config.yaml` exits 0 when the file is valid. Every `${VAR}` in the file must be set in the environment.
+`renovate-server -validate -config config.yaml` exits 0 when the file loads: env expansion, references, globs, crontabs, log level and log format. Every `${VAR}` in the file must be set in the environment.
 
 ## Development
 
