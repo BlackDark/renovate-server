@@ -12,20 +12,27 @@ on:
         description: Release tag (vX.Y.Z)
         required: true
         type: string
+      floating_tags:
+        description: Also point major.minor and latest at this image
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       tag:
         description: Existing release tag to republish (vX.Y.Z)
         required: true
         type: string
+      floating_tags:
+        description: Also point major.minor and latest at this image
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
-  checks:
-    uses: ./.github/workflows/ci.yml # zizmor: ignore[self-repository] actionlint rejects `$/`
-
   version:
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -35,6 +42,10 @@ jobs:
           TAG: ${{ inputs.tag }}
         run: |
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::tag ${TAG} is not vX.Y.Z"; exit 1; }
+
+  checks:
+    needs: version
+    uses: ./.github/workflows/ci.yml # zizmor: ignore[self-repository] actionlint rejects `$/`
 
   goreleaser:
     needs: [checks, version]
@@ -153,14 +164,16 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # :latest only on a release-please publish. workflow_dispatch can target an older tag.
+      # The exact version tag always moves. major.minor and :latest move only
+      # when the caller sets floating_tags. A called workflow sees the caller's
+      # event (push), never workflow_call, so that name cannot select this.
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.IMAGE }}
           tags: |
             type=semver,pattern={{version}},value=${{ inputs.tag }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.tag }}
-            type=raw,value=latest,enable=${{ github.event_name == 'workflow_call' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.tag }},enable=${{ inputs.floating_tags }}
+            type=raw,value=latest,enable=${{ inputs.floating_tags }}
       - name: Push manifest
         working-directory: ${{ runner.temp }}/digests
         run: |

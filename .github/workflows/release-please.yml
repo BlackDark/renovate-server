@@ -4,6 +4,9 @@
 # A tag pushed with GITHUB_TOKEN starts no workflows, so there is no `on.push.tags` here.
 # There is no version file: goreleaser, the image and the chart take the tag.
 # `publish` grants every permission release.yml uses, including cosign's id-token.
+# The release PR is opened with GITHUB_TOKEN, so its CI run waits until a
+# maintainer chooses "Approve workflows to run". Pass a GitHub App token or PAT
+# as `token` on the action if that prompt should go away. This repo has no such token.
 name: Release Please
 
 on:
@@ -44,3 +47,4 @@ jobs:
       id-token: write # keyless cosign
     with:
       tag: ${{ needs.release-please.outputs.tag }}
+      floating_tags: true
