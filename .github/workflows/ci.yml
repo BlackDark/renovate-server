@@ -21,8 +21,11 @@ on:
 permissions:
   contents: read
 
+# github.workflow is the top-level caller, so a release's nested CI does not
+# share a group with the push-to-main run. One pending run per group: a later
+# main push would otherwise cancel a queued release check and skip publishing.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
