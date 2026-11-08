@@ -1,9 +1,7 @@
-# Repo-local tools. Renovate bumps the pins (grouped with go.mod via renovate-base go.json5).
 [tools]
 go = "1.27.1"
 golangci-lint = "2.15.0"
 
-# The one verify entry point for humans, agents and CI.
 # Image build stays in CI: it needs a Docker daemon.
 [tasks.check]
 description = "Format, lint, vet, race tests"

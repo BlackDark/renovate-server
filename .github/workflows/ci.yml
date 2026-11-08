@@ -1,13 +1,6 @@
-# CI from BlackDark/agent-presets snippets/ci.yml, adapted for this repo.
-# - One workflow, one required check: `check`. Area jobs can be added, renamed or skipped without touching the ruleset.
-#   Required checks match by NAME across ALL workflows. Do not add a second workflow with its own gate.
-# - Areas: `app` runs `mise run check` and the image build; `lint` checks workflows and Renovate config.
-#   PRs run only the areas they touch (docs-only PRs run neither); main, workflow_call and manual runs run every area.
-#   Tags arrive via release.yml calling this workflow (workflow_call), so no tag trigger here.
-# - Path detection uses plain git: a PR checkout is the merge commit, so HEAD^1..HEAD is exactly the PR's diff.
-# - `check` needs `if: always()`: a skipped job reports success, so without it a failed area would leave the gate green.
-#   Cancelled counts as failed, so a manually cancelled run can't be merged either.
-# - Draft PRs skip `changes`; area jobs inherit the skip and `check` passes (drafts can't be merged anyway).
+# One required check, named `check`. GitHub matches that name across every workflow.
+# `if: always()`: a skipped job counts as success, so a failed area would leave the gate green.
+# A PR checkout is the merge commit, so HEAD^1..HEAD is the PR diff.
 name: CI
 
 on:
@@ -21,9 +14,7 @@ on:
 permissions:
   contents: read
 
-# github.workflow is the top-level caller, so a release's nested CI does not
-# share a group with the push-to-main run. One pending run per group: a later
-# main push would otherwise cancel a queued release check and skip publishing.
+# Include the caller workflow. One pending run per group, so a later main push would cancel a queued release check.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -55,8 +46,7 @@ jobs:
           fi
           changed=$(git diff --name-only HEAD^1 HEAD)
           has() { grep -qE "$1" <<< "$changed" && echo true || echo false; }
-          # app: anything that is not docs, CI or Renovate config, or this file itself,
-          # so a broken `mise run check` step is caught.
+          # ci.yml counts as app, so a broken `mise run check` step fails CI.
           app=$(has '^\.github/workflows/ci\.yml$')
           grep -qvE '^(docs/|\.github/|renovate\.json5?$|LICENSE$)|\.md$' <<< "$changed" && app=true
           {

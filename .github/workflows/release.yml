@@ -1,8 +1,5 @@
-# Publish an existing release tag (called by release-please, or re-run by hand).
-# The GitHub release and its notes already exist. This workflow attaches binaries,
-# the Helm chart and the signed image. It does not create the release.
-# amd64 and arm64 build on native runners. Build cache is the registry (buildcache-<arch>):
-# an Actions cache from tag v1.2.3 is unreadable on v1.2.4.
+# The GitHub release already exists. This attaches binaries, the chart and the signed image.
+# Registry build cache: an Actions cache written for one tag cannot be read on the next.
 name: Release
 
 on:
@@ -164,9 +161,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # The exact version tag always moves. major.minor and :latest move only
-      # when the caller sets floating_tags. A called workflow sees the caller's
-      # event (push), never workflow_call, so that name cannot select this.
+      # github.event_name is the caller's event (push), never workflow_call.
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.IMAGE }}

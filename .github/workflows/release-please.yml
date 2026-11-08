@@ -1,12 +1,6 @@
-# Release PR on every push to main (from BlackDark/agent-presets).
-# Conventional Commits drive the version and CHANGELOG.md. Merging the release PR tags
-# vX.Y.Z and opens the GitHub release, then `publish` calls release.yml with that tag.
-# A tag pushed with GITHUB_TOKEN starts no workflows, so there is no `on.push.tags` here.
-# There is no version file: goreleaser, the image and the chart take the tag.
-# `publish` grants every permission release.yml uses, including cosign's id-token.
-# The release PR is opened with GITHUB_TOKEN, so its CI run waits until a
-# maintainer chooses "Approve workflows to run". Pass a GitHub App token or PAT
-# as `token` on the action if that prompt should go away. This repo has no such token.
+# A GITHUB_TOKEN tag push starts no workflows, so publish is called from here.
+# No version file: goreleaser, the image and the chart take the tag.
+# The release PR's CI waits for "Approve workflows to run" until an app token or PAT is set.
 name: Release Please
 
 on:

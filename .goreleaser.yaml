@@ -18,8 +18,7 @@ sboms:
 checksum:
   name_template: checksums.txt
 
-# release-please creates the GitHub release and its notes before this runs.
-# Republish (workflow_dispatch) replaces artifacts already uploaded for that tag.
+# The release already exists. A republish replaces the artifacts on that tag.
 release:
   mode: keep-existing
   replace_existing_artifacts: true

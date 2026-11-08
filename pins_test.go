@@ -6,8 +6,7 @@ import (
 	"testing"
 )
 
-// mise, go.mod and the Docker builder must move together. Renovate groups the
-// bumps; this fails the build when a pin is edited by hand and the others are not.
+// Renovate groups these bumps. A hand edit that moves only one pin fails here.
 func TestGoVersionPinsAgree(t *testing.T) {
 	gomod := mustRead(t, "go.mod")
 	mise := mustRead(t, "mise.toml")

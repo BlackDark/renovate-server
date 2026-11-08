@@ -219,8 +219,7 @@ func run(configPath string) error {
 	}
 	sched.Start()
 
-	// SIGHUP reloads rules and log level. Platforms, executors and the listen
-	// address need a restart: refusing them here avoids a half-applied process.
+	// The listener and the built clients cannot change under a live process.
 	hup := make(chan os.Signal, 1)
 	signal.Notify(hup, syscall.SIGHUP)
 	go func() {
@@ -284,8 +283,6 @@ func run(configPath string) error {
 	return nil
 }
 
-// reloadRefused reports whether SIGHUP must keep the running config.
-// Platforms, executors and the listen address are fixed at process start.
 func reloadRefused(old, next *config.Config) bool {
 	if old.Server.Listen != next.Server.Listen {
 		return true
