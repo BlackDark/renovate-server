@@ -18,5 +18,10 @@ sboms:
 checksum:
   name_template: checksums.txt
 
+# The release already exists. A republish replaces the artifacts on that tag.
+release:
+  mode: keep-existing
+  replace_existing_artifacts: true
+
 changelog:
-  use: github-native
+  disable: true

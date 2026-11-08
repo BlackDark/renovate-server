@@ -1,0 +1,16 @@
+[tools]
+go = "1.27.1"
+golangci-lint = "2.15.0"
+
+# Image build stays in CI: it needs a Docker daemon.
+[tasks.check]
+description = "Format, lint, vet, race tests"
+run = "test -z \"$(gofmt -l .)\" && golangci-lint fmt --diff && golangci-lint run && go vet ./... && go test -race ./..."
+
+[tasks.build]
+description = "Static binary"
+run = "CGO_ENABLED=0 go build -trimpath -ldflags \"-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)\" -o renovate-server ./cmd/renovate-server"
+
+[tasks.docker]
+description = "Local image"
+run = "docker build -t renovate-server:dev --build-arg VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev) ."

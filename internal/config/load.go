@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"regexp"
 	"strings"
@@ -122,6 +123,15 @@ func (c *Config) applyDefaults() {
 }
 
 func (c *Config) validate() error {
+	var level slog.Level
+	if err := level.UnmarshalText([]byte(c.Server.Log.Level)); err != nil {
+		return fmt.Errorf("log level %q is not supported", c.Server.Log.Level)
+	}
+	switch c.Server.Log.Format {
+	case "json", "text":
+	default:
+		return fmt.Errorf("log format %q is not supported", c.Server.Log.Format)
+	}
 	switch c.Server.Store.Type {
 	case "memory":
 	case "redis":

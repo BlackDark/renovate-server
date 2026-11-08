@@ -158,6 +158,12 @@ func TestValidationErrors(t *testing.T) {
 		{"no platforms", func(s string) string {
 			return strings.Replace(s, "platforms:", "platformsX:", 1)
 		}, "at least one platform"},
+		{"bad log level", func(s string) string {
+			return strings.Replace(s, `listen: ":9090"`, "listen: \":9090\"\n  log:\n    level: loud", 1)
+		}, `log level "loud"`},
+		{"bad log format", func(s string) string {
+			return strings.Replace(s, `listen: ":9090"`, "listen: \":9090\"\n  log:\n    format: yaml", 1)
+		}, `log format "yaml"`},
 		{"unknown executor in rule", func(s string) string {
 			return strings.Replace(s, "executor: ci", "executor: nope", 1)
 		}, `unknown executor "nope"`},

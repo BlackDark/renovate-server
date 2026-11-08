@@ -1,13 +1,30 @@
+// Require the `check` status and allow auto-merge, or platform automerge lands before CI.
+// An up-to-date-branch ruleset stalls automerge: renovate-base rebases only on conflicts.
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
-  extends: ["github>blackdark/renovate-base//default.json5", ":pinVersions"],
-  postUpdateOptions: ["gomodTidy"],
+  extends: [
+    "github>blackdark/renovate-base//default.json5",
+    "github>blackdark/renovate-base//go.json5", // go.mod + mise + golang image in one PR
+    ":pinVersions",
+  ],
+  // Renovate automerge stays in the weekly window. Platform automerge merges when CI passes.
+  updateNotScheduled: false,
+  platformAutomerge: true,
+  separateMultipleMajor: true,
+  // gomodUpdateImportPaths rewrites imports on a /vN major.
+  postUpdateOptions: ["gomodTidy", "gomodUpdateImportPaths"],
   packageRules: [
     {
-      // deployment.yaml renders `repository:tag`. A digest in image.tag is not a valid image ref.
+      // image.tag is rendered as repository:tag. A digest is not a valid ref.
       description: "Chart image tag is not a digest field",
       matchFileNames: ["deploy/chart/renovate-server/values.yaml"],
       pinDigests: false,
+    },
+    {
+      description: "Majors: one PR each, merged by hand",
+      matchUpdateTypes: ["major"],
+      addLabels: ["major"],
+      automerge: false,
     },
   ],
 }
