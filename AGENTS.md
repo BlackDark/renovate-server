@@ -64,4 +64,3 @@ You own the codebase's health, not only the task: leave every touched area clean
 - One replica. The store does not coordinate across processes.
 - `${VAR}` in config comes from the environment. An unset variable aborts startup.
 - `deploy/chart/renovate-server/values.yaml` `image.tag` stays a tag, not a digest. Renovate has `pinDigests: false` on that file.
-- `go` in `mise.toml`, the `go` directive in `go.mod`, and `golang:` in the Dockerfile move together (`pins_test.go`).
