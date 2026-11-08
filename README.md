@@ -3,7 +3,7 @@
 # renovate-server
 
 **Coordinates Renovate runs across GitLab and GitHub repos.**<br>
-One process takes the webhooks and the cron, and starts each run somewhere else: a GitLab pipeline, a Kubernetes Job, or a local container. A repository never has two runs at once.
+One process takes the webhooks and the cron, and starts each run somewhere else: a GitLab pipeline, a Kubernetes Job, or a local container. One lock per repository.
 
 [![CI](https://github.com/BlackDark/renovate-server/actions/workflows/ci.yml/badge.svg)](https://github.com/BlackDark/renovate-server/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/BlackDark/renovate-server)](https://github.com/BlackDark/renovate-server/releases/latest)
@@ -38,7 +38,7 @@ The server listens on port 8080. Point the group or org webhook at `https://<hos
 helm install renovate-server oci://ghcr.io/blackdark/charts/renovate-server --version <version> -f values.yaml
 ```
 
-`values.yaml` `config` is the server config and needs at least one platform ([examples/config.yaml](examples/config.yaml)). Put tokens in a Secret and list it under `envFrom`.
+`values.yaml` needs a `config` with at least one platform and an `envFrom` secret for the `${VAR}` tokens. A minimal file is in [docs/configuration.md](docs/configuration.md).
 
 Full config, webhook setup, caching and metrics: [docs/configuration.md](docs/configuration.md).
 
@@ -53,7 +53,7 @@ Full config, webhook setup, caching and metrics: [docs/configuration.md](docs/co
 ### Executors
 
 - **gitlabPipeline**: trigger a pipeline in a central runner project and poll it to completion.
-- **kubernetes**: a Job from the Renovate image. Running Jobs are picked up again after a restart.
+- **kubernetes**: a Job from the Renovate image. Running Jobs are picked up again after a restart. The Job keeps running after `runTimeout` releases the lock; set `pod.activeDeadlineSeconds` so the next run does not overlap it.
 - **docker**: a container on the local Docker daemon.
 - **noop**: accept the run, log it, do nothing.
 

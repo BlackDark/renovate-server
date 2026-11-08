@@ -163,4 +163,27 @@ Install the Helm chart straight from ghcr:
 helm install renovate-server oci://ghcr.io/blackdark/charts/renovate-server --version <version> -f values.yaml
 ```
 
-`config` in that values file is the server config and needs at least one platform. Reference token Secrets from `envFrom`. The chart version committed in git is a placeholder. The release workflow packages it with the git tag as `--version` and `--app-version`.
+`config` is copied into the pod as `config.yaml`. It needs at least one platform, one executor and a catch-all rule. `envFrom` is passed through to the container, so a Secret can supply the `${VAR}` values:
+
+```yaml
+config:
+  platforms:
+    - name: gitlab
+      type: gitlab
+      baseURL: https://gitlab.example.com
+      token: ${GITLAB_TOKEN}
+      webhook:
+        path: /webhook/gitlab
+        secret: ${GITLAB_WEBHOOK_SECRET}
+  executors:
+    - name: shadow
+      type: noop
+  rules:
+    - match: "**"
+      executor: shadow
+envFrom:
+  - secretRef:
+      name: renovate-server
+```
+
+The chart version committed in git is a placeholder. The release workflow packages it with the git tag as `--version` and `--app-version`.
