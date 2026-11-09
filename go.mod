@@ -11,7 +11,7 @@ require (
 	github.com/prometheus/client_golang v1.25.0
 	github.com/redis/go-redis/v9 v9.23.0
 	github.com/robfig/cron/v3 v3.0.1
-	gitlab.com/gitlab-org/api/client-go/v3 v3.45.0
+	gitlab.com/gitlab-org/api/client-go/v3 v3.46.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.37.2
 	k8s.io/apimachinery v0.37.2
